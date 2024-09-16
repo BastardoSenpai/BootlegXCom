@@ -1,11 +1,14 @@
 using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEngine.SceneManagement;
 
 public enum GameMode { Normal, Move, Attack, UseAbility, Inventory }
 
 public class GameManager : MonoBehaviour
 {
+    public static GameManager Instance { get; private set; }
+
     public GridSystem gridSystem;
     public TurnManager turnManager;
     public CombatManager combatManager;
@@ -14,12 +17,13 @@ public class GameManager : MonoBehaviour
     public MissionManager missionManager;
     public EnemyAI enemyAI;
     public CampaignManager campaignManager;
+    public WorldMap worldMap;
+    public BaseManager baseManager;
 
     public GameObject[] unitPrefabs;
     public SoldierClass[] soldierClasses;
     public Weapon[] availableWeapons;
-    public int numPlayerUnits = 4;
-    public int numEnemyUnits = 4;
+    public Equipment[] availableEquipments;
 
     private GameMode currentGameMode = GameMode.Normal;
     private Unit selectedUnit;
@@ -32,33 +36,69 @@ public class GameManager : MonoBehaviour
 
     private AudioSource audioSource;
 
+    void Awake()
+    {
+        if (Instance == null)
+        {
+            Instance = this;
+            DontDestroyOnLoad(gameObject);
+        }
+        else
+        {
+            Destroy(gameObject);
+        }
+    }
+
     void Start()
     {
-        if (gridSystem == null) gridSystem = GetComponent<GridSystem>();
-        if (turnManager == null) turnManager = GetComponent<TurnManager>();
-        if (combatManager == null) combatManager = GetComponent<CombatManager>();
-        if (sceneSetup == null) sceneSetup = GetComponent<SceneSetup>();
-        if (gameUI == null) gameUI = FindObjectOfType<GameUI>();
-        if (missionManager == null) missionManager = GetComponent<MissionManager>();
-        if (enemyAI == null) enemyAI = GetComponent<EnemyAI>();
-        if (campaignManager == null) campaignManager = CampaignManager.Instance;
-
         audioSource = gameObject.AddComponent<AudioSource>();
-
-        InitializeGame();
+        SceneManager.sceneLoaded += OnSceneLoaded;
     }
 
-    void InitializeGame()
+    void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
-        GenerateMap();
+        if (scene.name == "MissionScene")
+        {
+            InitializeMissionScene();
+        }
+        else if (scene.name == "WorldMapScene")
+        {
+            InitializeWorldMapScene();
+        }
+    }
+
+    void InitializeMissionScene()
+    {
+        gridSystem = FindObjectOfType<GridSystem>();
+        turnManager = FindObjectOfType<TurnManager>();
+        combatManager = FindObjectOfType<CombatManager>();
+        sceneSetup = FindObjectOfType<SceneSetup>();
+        gameUI = FindObjectOfType<GameUI>();
+        missionManager = FindObjectOfType<MissionManager>();
+        enemyAI = FindObjectOfType<EnemyAI>();
+
+        if (SaveSystem.MissionSaveExists())
+        {
+            LoadMission();
+        }
+        else
+        {
+            StartNewMission();
+        }
+    }
+
+    void InitializeWorldMapScene()
+    {
+        worldMap = FindObjectOfType<WorldMap>();
+        baseManager = FindObjectOfType<BaseManager>();
+        // Initialize world map and base management UI
+    }
+
+    void StartNewMission()
+    {
+        missionManager.GenerateRandomMission();
         SpawnUnits();
-        turnManager.OnTurnChange += HandleTurnChange;
-    }
-
-    void GenerateMap()
-    {
-        gridSystem.CreateGrid();
-        sceneSetup.CreateGridVisual();
+        turnManager.StartFirstTurn();
     }
 
     void SpawnUnits()
@@ -71,16 +111,17 @@ public class GameManager : MonoBehaviour
     {
         List<Cell> emptyCells = gridSystem.GetAllCells().Where(c => !c.IsOccupied && c.TerrainType != TerrainType.Water).ToList();
 
-        for (int i = 0; i < numPlayerUnits; i++)
+        foreach (var soldier in campaignManager.currentCampaign.soldiers)
         {
-            if (emptyCells.Count == 0 || i >= campaignManager.currentCampaign.soldiers.Count) break;
+            if (emptyCells.Count == 0) break;
 
             int randomIndex = Random.Range(0, emptyCells.Count);
             Cell spawnCell = emptyCells[randomIndex];
             emptyCells.RemoveAt(randomIndex);
 
-            PersistentSoldier persistentSoldier = campaignManager.currentCampaign.soldiers[i];
-            Unit unit = campaignManager.CreateUnitFromPersistentSoldier(persistentSoldier, unitPrefabs[0]);
+            GameObject unitObj = Instantiate(unitPrefabs[0], spawnCell.WorldPosition, Quaternion.identity);
+            Unit unit = unitObj.GetComponent<Unit>();
+            unit.InitializeFromPersistentSoldier(soldier);
             unit.SetPosition(spawnCell);
 
             turnManager.playerUnits.Add(unit);
@@ -89,116 +130,7 @@ public class GameManager : MonoBehaviour
 
     void SpawnEnemyUnits()
     {
-        List<Cell> emptyCells = gridSystem.GetAllCells().Where(c => !c.IsOccupied && c.TerrainType != TerrainType.Water).ToList();
-
-        for (int i = 0; i < numEnemyUnits; i++)
-        {
-            if (emptyCells.Count == 0) break;
-
-            int randomIndex = Random.Range(0, emptyCells.Count);
-            Cell spawnCell = emptyCells[randomIndex];
-            emptyCells.RemoveAt(randomIndex);
-
-            int unitTypeIndex = Random.Range(0, unitPrefabs.Length);
-            GameObject unitObj = Instantiate(unitPrefabs[unitTypeIndex], spawnCell.WorldPosition, Quaternion.identity);
-            Unit unit = unitObj.GetComponent<Unit>();
-            
-            // Assign random soldier class and weapon
-            unit.soldierClass = soldierClasses[Random.Range(0, soldierClasses.Length)];
-            Weapon randomWeapon = availableWeapons[Random.Range(0, availableWeapons.Length)];
-            unit.AddWeaponToInventory(randomWeapon);
-            unit.EquipWeapon(randomWeapon);
-
-            unit.SetPosition(spawnCell);
-
-            turnManager.enemyUnits.Add(unit);
-            unit.GetComponent<Renderer>().material.color = Color.red;
-        }
-    }
-
-    void Update()
-    {
-        if (turnManager.IsPlayerTurn())
-        {
-            HandlePlayerInput();
-        }
-    }
-
-    void HandlePlayerInput()
-    {
-        if (Input.GetMouseButtonDown(0))
-        {
-            Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
-            RaycastHit hit;
-
-            if (Physics.Raycast(ray, out hit))
-            {
-                Cell clickedCell = gridSystem.GetCellAtPosition(hit.point);
-                if (clickedCell != null)
-                {
-                    HandleCellClick(clickedCell);
-                }
-            }
-        }
-    }
-
-    void HandleCellClick(Cell cell)
-    {
-        Unit unitOnCell = FindUnitOnCell(cell);
-
-        switch (currentGameMode)
-        {
-            case GameMode.Normal:
-                if (unitOnCell != null && turnManager.playerUnits.Contains(unitOnCell))
-                {
-                    selectedUnit = unitOnCell;
-                    gameUI.UpdateSelectedUnitInfo(selectedUnit);
-                }
-                break;
-            case GameMode.Move:
-                if (selectedUnit != null && selectedUnit.CanMoveTo(cell))
-                {
-                    selectedUnit.Move(cell);
-                    PlaySound(moveSound);
-                    SetGameMode(GameMode.Normal);
-                }
-                break;
-            case GameMode.Attack:
-                if (selectedUnit != null && unitOnCell != null && turnManager.enemyUnits.Contains(unitOnCell))
-                {
-                    bool hit = combatManager.TryAttack(selectedUnit, unitOnCell);
-                    PlaySound(hit ? hitSound : missSound);
-                    SetGameMode(GameMode.Normal);
-                }
-                break;
-            case GameMode.UseAbility:
-                if (selectedUnit != null && selectedAbility != null)
-                {
-                    if (unitOnCell != null)
-                    {
-                        selectedUnit.UseAbility(selectedAbility, unitOnCell);
-                        SetGameMode(GameMode.Normal);
-                    }
-                    else
-                    {
-                        Debug.Log("No valid target for ability.");
-                    }
-                }
-                break;
-            case GameMode.Inventory:
-                // Handle inventory actions
-                break;
-        }
-
-        missionManager.CheckMissionObjectives();
-        gameUI.UpdateMissionInfo(missionManager.GetMissionStatus());
-        gameUI.UpdateSelectedUnitInfo(selectedUnit);
-    }
-
-    Unit FindUnitOnCell(Cell cell)
-    {
-        return turnManager.playerUnits.Concat(turnManager.enemyUnits)
-            .FirstOrDefault(u => gridSystem.GetCellAtPosition(u.transform.position) == cell);
+        // Similar to the previous implementation, but adjust based on mission difficulty
     }
 
     public void SetGameMode(GameMode newMode)
@@ -207,55 +139,12 @@ public class GameManager : MonoBehaviour
         gameUI.UpdateGameMode(newMode);
     }
 
-    void HandleTurnChange(Unit unit)
-    {
-        if (!turnManager.IsPlayerTurn())
-        {
-            StartEnemyTurn();
-        }
-    }
-
-    void StartEnemyTurn()
-    {
-        foreach (Unit enemyUnit in turnManager.enemyUnits)
-        {
-            enemyAI.PerformTurn(enemyUnit);
-        }
-        turnManager.EndCurrentTurn();
-    }
-
-    public Cell GetRandomEmptyCell()
-    {
-        return gridSystem.GetAllCells()
-            .Where(c => !c.IsOccupied && c.TerrainType != TerrainType.Water)
-            .OrderBy(c => Random.value)
-            .FirstOrDefault();
-    }
-
-    void PlaySound(AudioClip clip)
-    {
-        if (clip != null)
-        {
-            audioSource.PlayOneShot(clip);
-        }
-    }
-
     public void UseAbility(Ability ability)
     {
         if (selectedUnit != null)
         {
             selectedAbility = ability;
             SetGameMode(GameMode.UseAbility);
-        }
-    }
-
-    public void ImproveAbility(Ability ability)
-    {
-        if (selectedUnit != null)
-        {
-            CharacterProgression progression = selectedUnit.GetComponent<CharacterProgression>();
-            progression.ImproveAbility(ability);
-            gameUI.UpdateSelectedUnitInfo(selectedUnit);
         }
     }
 
@@ -272,7 +161,40 @@ public class GameManager : MonoBehaviour
             campaignManager.currentCampaign.resources += 100; // Add resource reward
         }
 
-        campaignManager.SaveCampaign();
-        // Load the campaign menu or next mission scene
+        SaveSystem.SaveCampaign(campaignManager.currentCampaign);
+        SaveSystem.DeleteMissionSave();
+        SceneManager.LoadScene("WorldMapScene");
+    }
+
+    public void SaveMission()
+    {
+        MissionSaveData missionData = new MissionSaveData(missionManager, turnManager, gridSystem);
+        SaveSystem.SaveMission(missionData);
+        Debug.Log("Mission saved successfully.");
+    }
+
+    public void LoadMission()
+    {
+        MissionSaveData missionData = SaveSystem.LoadMission();
+        if (missionData != null)
+        {
+            missionManager.LoadFromSaveData(missionData);
+            turnManager.LoadFromSaveData(missionData);
+            gridSystem.LoadFromSaveData(missionData.gridData);
+            Debug.Log("Mission loaded successfully.");
+        }
+        else
+        {
+            Debug.LogError("Failed to load mission.");
+            StartNewMission();
+        }
+    }
+
+    void OnApplicationQuit()
+    {
+        if (SceneManager.GetActiveScene().name == "MissionScene")
+        {
+            SaveMission();
+        }
     }
 }

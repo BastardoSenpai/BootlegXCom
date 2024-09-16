@@ -7,7 +7,10 @@ public enum WeaponType
     AssaultRifle,
     SniperRifle,
     Shotgun,
-    HeavyWeapon
+    HeavyWeapon,
+    SMG,
+    LMG,
+    RocketLauncher
 }
 
 [System.Serializable]
@@ -24,12 +27,15 @@ public class WeaponAttachment
 public class Weapon : ScriptableObject
 {
     public string weaponName;
+    public WeaponType type;
     public int baseDamage;
     public int baseAccuracy;
     public int baseCriticalChance;
     public int baseAmmoCapacity;
     public int range;
-    public WeaponType type;
+    public int actionPointCost = 1;
+    public bool isAoE = false;
+    public float aoERadius = 0f;
 
     public List<WeaponAttachment> attachments = new List<WeaponAttachment>();
 

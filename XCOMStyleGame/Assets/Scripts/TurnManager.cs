@@ -15,7 +15,16 @@ public class TurnManager : MonoBehaviour
     public delegate void TurnChangeHandler(Unit unit);
     public event TurnChangeHandler OnTurnChange;
 
+    private GameManager gameManager;
+    private MissionManager missionManager;
+
     void Start()
+    {
+        gameManager = GameManager.Instance;
+        missionManager = FindObjectOfType<MissionManager>();
+    }
+
+    public void StartFirstTurn()
     {
         InitializeTurnOrder();
     }
@@ -49,31 +58,14 @@ public class TurnManager : MonoBehaviour
     public void EndCurrentTurn()
     {
         currentUnit.EndTurn();
+        missionManager.EndTurn();
         StartNextTurn();
     }
 
     private void PerformAITurn()
     {
-        // Simple AI logic - move towards nearest player unit and attack if possible
-        Unit nearestPlayerUnit = FindNearestUnit(currentUnit, playerUnits);
-        if (nearestPlayerUnit != null)
-        {
-            if (currentUnit.CanAttack(nearestPlayerUnit))
-            {
-                currentUnit.Attack(nearestPlayerUnit);
-            }
-            else if (currentUnit.CanMoveTo(GetComponent<GridSystem>().GetCellAtPosition(nearestPlayerUnit.transform.position)))
-            {
-                currentUnit.Move(GetComponent<GridSystem>().GetCellAtPosition(nearestPlayerUnit.transform.position));
-            }
-        }
-
+        gameManager.enemyAI.PerformTurn(currentUnit);
         EndCurrentTurn();
-    }
-
-    private Unit FindNearestUnit(Unit fromUnit, List<Unit> unitList)
-    {
-        return unitList.OrderBy(u => Vector3.Distance(fromUnit.transform.position, u.transform.position)).FirstOrDefault();
     }
 
     public bool IsPlayerTurn()
@@ -84,5 +76,39 @@ public class TurnManager : MonoBehaviour
     public Unit GetCurrentUnit()
     {
         return currentUnit;
+    }
+
+    public void LoadFromSaveData(MissionSaveData saveData)
+    {
+        // Clear existing units
+        playerUnits.Clear();
+        enemyUnits.Clear();
+
+        // Spawn and initialize player units
+        foreach (var unitData in saveData.playerUnits)
+        {
+            GameObject unitObj = Instantiate(gameManager.unitPrefabs[0], unitData.position, Quaternion.identity);
+            Unit unit = unitObj.GetComponent<Unit>();
+            unit.LoadFromSaveData(unitData);
+            playerUnits.Add(unit);
+        }
+
+        // Spawn and initialize enemy units
+        foreach (var unitData in saveData.enemyUnits)
+        {
+            GameObject unitObj = Instantiate(gameManager.unitPrefabs[1], unitData.position, Quaternion.identity);
+            Unit unit = unitObj.GetComponent<Unit>();
+            unit.LoadFromSaveData(unitData);
+            enemyUnits.Add(unit);
+        }
+
+        // Recreate the turn order
+        turnOrder = new Queue<Unit>(playerUnits.Concat(enemyUnits).OrderBy(x => Random.value));
+
+        // Set the current unit and team
+        currentUnit = turnOrder.Peek();
+        currentTeam = playerUnits.Contains(currentUnit) ? Team.Player : Team.Enemy;
+
+        OnTurnChange?.Invoke(currentUnit);
     }
 }

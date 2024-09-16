@@ -15,6 +15,7 @@ public class Unit : MonoBehaviour
     public SoldierClass soldierClass;
     public Weapon equippedWeapon;
     public List<Weapon> inventory = new List<Weapon>();
+    public List<Equipment> equipments = new List<Equipment>();
 
     private Cell currentCell;
     public bool hasMoved = false;
@@ -49,6 +50,42 @@ public class Unit : MonoBehaviour
         UpdateStatsBasedOnClassAndWeapon();
     }
 
+    public void InitializeFromPersistentSoldier(PersistentSoldier soldier)
+    {
+        unitName = soldier.name;
+        maxHealth = soldier.stats["maxHealth"];
+        currentHealth = soldier.stats["currentHealth"];
+        accuracy = soldier.stats["accuracy"];
+        movementRange = soldier.stats["mobility"];
+        
+        // Initialize SoldierClass (you'll need to implement this method in the SoldierClass script)
+        soldierClass = SoldierClass.GetSoldierClassByType(soldier.classType);
+
+        // Initialize equipment
+        foreach (string weaponName in soldier.inventory)
+        {
+            Weapon weapon = GameManager.Instance.availableWeapons.Find(w => w.weaponName == weaponName);
+            if (weapon != null)
+            {
+                inventory.Add(weapon);
+            }
+        }
+        if (inventory.Count > 0)
+        {
+            equippedWeapon = inventory[0];
+        }
+
+        // Initialize character progression
+        characterProgression.level = soldier.level;
+        characterProgression.experience = soldier.experience;
+        characterProgression.InitializeFromPersistentSoldier(soldier);
+
+        // Apply customization
+        ApplyCustomization(soldier.customization);
+
+        UpdateStatsBasedOnClassAndWeapon();
+    }
+
     void UpdateStatsBasedOnClassAndWeapon()
     {
         if (soldierClass != null)
@@ -78,6 +115,12 @@ public class Unit : MonoBehaviour
             // Update stats based on equipped weapon
             attackRange = equippedWeapon.range;
             accuracy += equippedWeapon.GetAccuracy();
+        }
+
+        // Apply equipment effects
+        foreach (Equipment equipment in equipments)
+        {
+            equipment.ApplyEffect(this);
         }
     }
 
@@ -267,5 +310,21 @@ public class Unit : MonoBehaviour
             // Apply hair style (you'll need to implement this based on your character model)
             // For example, enabling/disabling different hair meshes
         }
+    }
+
+    public void LoadFromSaveData(UnitSaveData saveData)
+    {
+        unitName = saveData.unitName;
+        currentHealth = saveData.currentHealth;
+        actionPoints = saveData.actionPoints;
+        hasMoved = saveData.hasMoved;
+        hasAttacked = saveData.hasAttacked;
+
+        // Set position
+        Cell cell = gridSystem.GetCellAtPosition(saveData.position);
+        SetPosition(cell);
+
+        // Load other necessary data (e.g., equipment, abilities, etc.)
+        // You may need to expand the UnitSaveData class to include this information
     }
 }

@@ -1,5 +1,22 @@
 using UnityEngine;
 using System.Collections.Generic;
+using System.Linq;
+
+[System.Serializable]
+public class Perk
+{
+    public string name;
+    public string description;
+    public bool isUnlocked;
+    public List<string> prerequisites = new List<string>();
+}
+
+[System.Serializable]
+public class Specialization
+{
+    public string name;
+    public List<Perk> perks = new List<Perk>();
+}
 
 public class CharacterProgression : MonoBehaviour
 {
@@ -8,12 +25,47 @@ public class CharacterProgression : MonoBehaviour
     public int skillPoints = 0;
 
     private Unit unit;
-    private SoldierClass soldierClass;
+    public List<Specialization> specializations = new List<Specialization>();
+    public Specialization currentSpecialization;
 
     void Start()
     {
         unit = GetComponent<Unit>();
-        soldierClass = unit.soldierClass;
+        InitializeSpecializations();
+    }
+
+    void InitializeSpecializations()
+    {
+        // Define specializations and perks based on the unit's class
+        switch (unit.soldierClass.classType)
+        {
+            case SoldierClassType.Assault:
+                specializations = new List<Specialization>
+                {
+                    new Specialization
+                    {
+                        name = "Close Quarter Combat",
+                        perks = new List<Perk>
+                        {
+                            new Perk { name = "Run & Gun", description = "Move and shoot in the same turn" },
+                            new Perk { name = "Close and Personal", description = "Bonus damage at close range", prerequisites = new List<string> { "Run & Gun" } },
+                            new Perk { name = "Killer Instinct", description = "Increased critical chance", prerequisites = new List<string> { "Close and Personal" } }
+                        }
+                    },
+                    new Specialization
+                    {
+                        name = "Tactical Assault",
+                        perks = new List<Perk>
+                        {
+                            new Perk { name = "Tactical Sense", description = "Bonus defense for each enemy in sight" },
+                            new Perk { name = "Aggression", description = "Bonus crit chance for each enemy in sight", prerequisites = new List<string> { "Tactical Sense" } },
+                            new Perk { name = "Bring 'Em On", description = "Bonus damage based on enemies in sight", prerequisites = new List<string> { "Aggression" } }
+                        }
+                    }
+                };
+                break;
+            // Add specializations for other classes (Sniper, Heavy, Support) here
+        }
     }
 
     public void AddExperience(int amount)
@@ -45,7 +97,7 @@ public class CharacterProgression : MonoBehaviour
         unit.movementRange += 1;
     }
 
-    public void ImproveAbility(Ability ability)
+    public void UnlockPerk(string perkName)
     {
         if (skillPoints <= 0)
         {
@@ -53,64 +105,57 @@ public class CharacterProgression : MonoBehaviour
             return;
         }
 
-        if (soldierClass.UnlockAbility(ability))
+        Perk perk = currentSpecialization.perks.Find(p => p.name == perkName && !p.isUnlocked);
+        if (perk != null && CanUnlockPerk(perk))
         {
+            perk.isUnlocked = true;
             skillPoints--;
-            Debug.Log($"{unit.unitName} unlocked the ability: {ability.name}!");
+            ApplyPerkEffects(perk);
+            Debug.Log($"{unit.unitName} unlocked the perk: {perk.name}!");
         }
         else
         {
-            Debug.Log($"Cannot unlock ability: {ability.name}. Make sure it's in the skill tree and its prerequisites are met.");
+            Debug.Log($"Cannot unlock perk: {perkName}. Make sure it's available and its prerequisites are met.");
         }
     }
 
-    public List<Ability> GetAvailableAbilities()
+    private bool CanUnlockPerk(Perk perk)
     {
-        List<Ability> availableAbilities = new List<Ability>();
-        CheckAvailableAbilitiesRecursive(soldierClass.skillTreeRoot, availableAbilities);
-        return availableAbilities;
+        return perk.prerequisites.All(prereq => currentSpecialization.perks.Find(p => p.name == prereq)?.isUnlocked ?? false);
     }
 
-    private void CheckAvailableAbilitiesRecursive(SoldierClass.SkillTreeNode node, List<Ability> availableAbilities)
+    private void ApplyPerkEffects(Perk perk)
     {
-        if (!node.isUnlocked && CanUnlockNode(node))
+        // Implement perk effects here
+        switch (perk.name)
         {
-            availableAbilities.Add(node.ability);
-        }
-
-        foreach (var child in node.children)
-        {
-            CheckAvailableAbilitiesRecursive(child, availableAbilities);
+            case "Run & Gun":
+                // Allow moving and shooting in the same turn
+                break;
+            case "Close and Personal":
+                // Implement bonus damage at close range
+                break;
+            // Add cases for other perks
         }
     }
 
-    private bool CanUnlockNode(SoldierClass.SkillTreeNode node)
+    public void ChooseSpecialization(string specializationName)
     {
-        if (node == soldierClass.skillTreeRoot)
+        Specialization spec = specializations.Find(s => s.name == specializationName);
+        if (spec != null)
         {
-            return true;
+            currentSpecialization = spec;
+            Debug.Log($"{unit.unitName} chose the {specializationName} specialization!");
         }
-
-        var parent = FindParentNode(soldierClass.skillTreeRoot, node);
-        return parent != null && parent.isUnlocked;
+        else
+        {
+            Debug.Log($"Specialization {specializationName} not found.");
+        }
     }
 
-    private SoldierClass.SkillTreeNode FindParentNode(SoldierClass.SkillTreeNode current, SoldierClass.SkillTreeNode target)
+    public List<Perk> GetAvailablePerks()
     {
-        foreach (var child in current.children)
-        {
-            if (child == target)
-            {
-                return current;
-            }
-
-            var result = FindParentNode(child, target);
-            if (result != null)
-            {
-                return result;
-            }
-        }
-
-        return null;
+        if (currentSpecialization == null) return new List<Perk>();
+        return currentSpecialization.perks.Where(p => !p.isUnlocked && CanUnlockPerk(p)).ToList();
     }
 }

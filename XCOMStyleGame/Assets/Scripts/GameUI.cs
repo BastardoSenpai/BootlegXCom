@@ -1,7 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
-using System.Collections.Generic;
 
 public class GameUI : MonoBehaviour
 {
@@ -19,17 +18,27 @@ public class GameUI : MonoBehaviour
     public GameObject skillTreePanel;
     public GameObject skillTreeNodePrefab;
 
+    [Header("Save/Load UI")]
+    public Button saveButton;
+    public Button loadButton;
+    public GameObject saveLoadPanel;
+    public TMP_Text saveLoadMessage;
+
     private GameManager gameManager;
     private TurnManager turnManager;
+    private MissionManager missionManager;
 
     void Start()
     {
-        gameManager = FindObjectOfType<GameManager>();
+        gameManager = GameManager.Instance;
         turnManager = FindObjectOfType<TurnManager>();
+        missionManager = FindObjectOfType<MissionManager>();
 
         endTurnButton.onClick.AddListener(EndTurn);
         attackButton.onClick.AddListener(SetAttackMode);
         moveButton.onClick.AddListener(SetMoveMode);
+        saveButton.onClick.AddListener(SaveGame);
+        loadButton.onClick.AddListener(LoadGame);
 
         turnManager.OnTurnChange += UpdateUI;
     }
@@ -43,8 +52,11 @@ public class GameUI : MonoBehaviour
         endTurnButton.gameObject.SetActive(isPlayerTurn);
         attackButton.gameObject.SetActive(isPlayerTurn);
         moveButton.gameObject.SetActive(isPlayerTurn);
+        saveButton.gameObject.SetActive(isPlayerTurn);
+        loadButton.gameObject.SetActive(isPlayerTurn);
 
         UpdateAbilityPanel(currentUnit);
+        UpdateMissionInfo(missionManager.GetMissionStatus());
     }
 
     public void UpdateSelectedUnitInfo(Unit unit)
@@ -168,5 +180,29 @@ public class GameUI : MonoBehaviour
             Vector2 childPosition = position + new Vector2(xOffset, -100f);
             CreateSkillTreeNodeUI(node.children[i], childPosition);
         }
+    }
+
+    void SaveGame()
+    {
+        gameManager.SaveMission();
+        ShowSaveLoadMessage("Game saved successfully!");
+    }
+
+    void LoadGame()
+    {
+        gameManager.LoadMission();
+        ShowSaveLoadMessage("Game loaded successfully!");
+    }
+
+    void ShowSaveLoadMessage(string message)
+    {
+        saveLoadPanel.SetActive(true);
+        saveLoadMessage.text = message;
+        Invoke("HideSaveLoadMessage", 2f);
+    }
+
+    void HideSaveLoadMessage()
+    {
+        saveLoadPanel.SetActive(false);
     }
 }
