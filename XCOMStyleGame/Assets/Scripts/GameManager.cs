@@ -2,7 +2,7 @@ using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
 
-public enum GameMode { Normal, Move, Attack }
+public enum GameMode { Normal, Move, Attack, UseAbility }
 
 public class GameManager : MonoBehaviour
 {
@@ -15,11 +15,14 @@ public class GameManager : MonoBehaviour
     public EnemyAI enemyAI;
 
     public GameObject[] unitPrefabs;
+    public SoldierClass[] soldierClasses;
+    public Weapon[] availableWeapons;
     public int numPlayerUnits = 4;
     public int numEnemyUnits = 4;
 
     private GameMode currentGameMode = GameMode.Normal;
     private Unit selectedUnit;
+    private Ability selectedAbility;
 
     public AudioClip moveSound;
     public AudioClip attackSound;
@@ -72,6 +75,13 @@ public class GameManager : MonoBehaviour
             int unitTypeIndex = Random.Range(0, unitPrefabs.Length);
             GameObject unitObj = Instantiate(unitPrefabs[unitTypeIndex], spawnCell.WorldPosition, Quaternion.identity);
             Unit unit = unitObj.GetComponent<Unit>();
+            
+            // Assign random soldier class and weapon
+            unit.soldierClass = soldierClasses[Random.Range(0, soldierClasses.Length)];
+            Weapon randomWeapon = availableWeapons[Random.Range(0, availableWeapons.Length)];
+            unit.AddWeaponToInventory(randomWeapon);
+            unit.EquipWeapon(randomWeapon);
+
             unit.SetPosition(spawnCell);
 
             if (isPlayerTeam)
@@ -142,10 +152,25 @@ public class GameManager : MonoBehaviour
                     SetGameMode(GameMode.Normal);
                 }
                 break;
+            case GameMode.UseAbility:
+                if (selectedUnit != null && selectedAbility != null)
+                {
+                    if (unitOnCell != null)
+                    {
+                        selectedUnit.UseAbility(selectedAbility, unitOnCell);
+                        SetGameMode(GameMode.Normal);
+                    }
+                    else
+                    {
+                        Debug.Log("No valid target for ability.");
+                    }
+                }
+                break;
         }
 
         missionManager.CheckMissionObjectives();
         gameUI.UpdateMissionInfo(missionManager.GetMissionStatus());
+        gameUI.UpdateSelectedUnitInfo(selectedUnit);
     }
 
     Unit FindUnitOnCell(Cell cell)
@@ -190,6 +215,25 @@ public class GameManager : MonoBehaviour
         if (clip != null)
         {
             audioSource.PlayOneShot(clip);
+        }
+    }
+
+    public void UseAbility(Ability ability)
+    {
+        if (selectedUnit != null)
+        {
+            selectedAbility = ability;
+            SetGameMode(GameMode.UseAbility);
+        }
+    }
+
+    public void ImproveAbility(Ability ability)
+    {
+        if (selectedUnit != null)
+        {
+            CharacterProgression progression = selectedUnit.GetComponent<CharacterProgression>();
+            progression.ImproveAbility(ability);
+            gameUI.UpdateSelectedUnitInfo(selectedUnit);
         }
     }
 }

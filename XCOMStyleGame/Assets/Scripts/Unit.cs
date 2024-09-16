@@ -1,59 +1,73 @@
 using UnityEngine;
-
-public enum UnitType { Soldier, Sniper, Heavy }
+using System.Collections.Generic;
 
 public class Unit : MonoBehaviour
 {
-    public UnitType type;
     public string unitName;
     public int maxHealth;
     public int currentHealth;
     public int movementRange;
     public int attackRange;
     public int accuracy;
-    public int damage;
     public int actionPoints;
     public int maxActionPoints;
+
+    public SoldierClass soldierClass;
+    public Weapon equippedWeapon;
+    public List<Weapon> inventory = new List<Weapon>();
 
     private Cell currentCell;
     public bool hasMoved = false;
     public bool hasAttacked = false;
 
+    private CharacterProgression characterProgression;
+
     void Start()
     {
-        SetUnitTypeAttributes();
-        currentHealth = maxHealth;
-        actionPoints = maxActionPoints;
+        characterProgression = GetComponent<CharacterProgression>();
+        if (characterProgression == null)
+        {
+            characterProgression = gameObject.AddComponent<CharacterProgression>();
+        }
+        InitializeUnit();
     }
 
-    void SetUnitTypeAttributes()
+    void InitializeUnit()
     {
-        switch (type)
+        currentHealth = maxHealth;
+        actionPoints = maxActionPoints;
+        UpdateStatsBasedOnClassAndWeapon();
+    }
+
+    void UpdateStatsBasedOnClassAndWeapon()
+    {
+        if (soldierClass != null)
         {
-            case UnitType.Soldier:
-                maxHealth = 100;
-                movementRange = 5;
-                attackRange = 5;
-                accuracy = 75;
-                damage = 20;
-                maxActionPoints = 2;
-                break;
-            case UnitType.Sniper:
-                maxHealth = 80;
-                movementRange = 4;
-                attackRange = 10;
-                accuracy = 90;
-                damage = 30;
-                maxActionPoints = 2;
-                break;
-            case UnitType.Heavy:
-                maxHealth = 150;
-                movementRange = 3;
-                attackRange = 4;
-                accuracy = 65;
-                damage = 40;
-                maxActionPoints = 1;
-                break;
+            // Update stats based on soldier class
+            switch (soldierClass.classType)
+            {
+                case SoldierClassType.Assault:
+                    movementRange += 2;
+                    break;
+                case SoldierClassType.Sniper:
+                    accuracy += 10;
+                    break;
+                case SoldierClassType.Heavy:
+                    maxHealth += 20;
+                    currentHealth += 20;
+                    break;
+                case SoldierClassType.Support:
+                    maxActionPoints += 1;
+                    actionPoints += 1;
+                    break;
+            }
+        }
+
+        if (equippedWeapon != null)
+        {
+            // Update stats based on equipped weapon
+            attackRange = equippedWeapon.range;
+            accuracy += Mathf.RoundToInt(equippedWeapon.accuracyModifier * 100);
         }
     }
 
@@ -118,6 +132,18 @@ public class Unit : MonoBehaviour
         hasMoved = false;
         hasAttacked = false;
         actionPoints = maxActionPoints;
+        
+        // Reset ability cooldowns
+        if (soldierClass != null)
+        {
+            foreach (var ability in soldierClass.abilities)
+            {
+                if (ability.currentCooldown > 0)
+                {
+                    ability.currentCooldown--;
+                }
+            }
+        }
     }
 
     public void EndTurn()
@@ -130,5 +156,40 @@ public class Unit : MonoBehaviour
     public bool HasRemainingActions()
     {
         return actionPoints > 0;
+    }
+
+    public void UseAbility(Ability ability, Unit target)
+    {
+        if (actionPoints >= ability.actionPointCost && ability.currentCooldown <= 0)
+        {
+            ability.Use(this, target);
+            actionPoints -= ability.actionPointCost;
+            ability.currentCooldown = ability.cooldown;
+        }
+        else
+        {
+            Debug.Log("Cannot use ability: Not enough action points or ability is on cooldown.");
+        }
+    }
+
+    public void EquipWeapon(Weapon weapon)
+    {
+        if (inventory.Contains(weapon))
+        {
+            equippedWeapon = weapon;
+            UpdateStatsBasedOnClassAndWeapon();
+        }
+        else
+        {
+            Debug.Log("Cannot equip weapon: Weapon not in inventory.");
+        }
+    }
+
+    public void AddWeaponToInventory(Weapon weapon)
+    {
+        if (!inventory.Contains(weapon))
+        {
+            inventory.Add(weapon);
+        }
     }
 }

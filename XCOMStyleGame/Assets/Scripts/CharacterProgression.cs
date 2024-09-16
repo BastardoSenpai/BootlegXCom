@@ -8,27 +8,12 @@ public class CharacterProgression : MonoBehaviour
     public int skillPoints = 0;
 
     private Unit unit;
-
-    [System.Serializable]
-    public class Skill
-    {
-        public string name;
-        public int level;
-        public int maxLevel;
-        public float[] improvements;
-    }
-
-    public List<Skill> skills = new List<Skill>
-    {
-        new Skill { name = "Health", level = 0, maxLevel = 5, improvements = new float[] { 10, 20, 30, 40, 50 } },
-        new Skill { name = "Accuracy", level = 0, maxLevel = 5, improvements = new float[] { 5, 10, 15, 20, 25 } },
-        new Skill { name = "Damage", level = 0, maxLevel = 5, improvements = new float[] { 2, 4, 6, 8, 10 } },
-        new Skill { name = "Movement", level = 0, maxLevel = 3, improvements = new float[] { 1, 2, 3 } }
-    };
+    private SoldierClass soldierClass;
 
     void Start()
     {
         unit = GetComponent<Unit>();
+        soldierClass = unit.soldierClass;
     }
 
     public void AddExperience(int amount)
@@ -52,9 +37,15 @@ public class CharacterProgression : MonoBehaviour
         experience -= (level - 1) * 100;
         skillPoints += 2;
         Debug.Log($"{unit.unitName} leveled up to level {level}!");
+
+        // Improve base stats
+        unit.maxHealth += 5;
+        unit.currentHealth += 5;
+        unit.accuracy += 2;
+        unit.movementRange += 1;
     }
 
-    public void ImproveSkill(string skillName)
+    public void ImproveAbility(Ability ability)
     {
         if (skillPoints <= 0)
         {
@@ -62,38 +53,64 @@ public class CharacterProgression : MonoBehaviour
             return;
         }
 
-        Skill skill = skills.Find(s => s.name == skillName);
-        if (skill == null || skill.level >= skill.maxLevel)
+        if (soldierClass.UnlockAbility(ability))
         {
-            Debug.Log($"Cannot improve {skillName} further.");
-            return;
+            skillPoints--;
+            Debug.Log($"{unit.unitName} unlocked the ability: {ability.name}!");
         }
-
-        skill.level++;
-        skillPoints--;
-
-        ApplySkillImprovement(skill);
-        Debug.Log($"{unit.unitName} improved {skillName} to level {skill.level}!");
+        else
+        {
+            Debug.Log($"Cannot unlock ability: {ability.name}. Make sure it's in the skill tree and its prerequisites are met.");
+        }
     }
 
-    private void ApplySkillImprovement(Skill skill)
+    public List<Ability> GetAvailableAbilities()
     {
-        float improvement = skill.improvements[skill.level - 1];
-        switch (skill.name)
+        List<Ability> availableAbilities = new List<Ability>();
+        CheckAvailableAbilitiesRecursive(soldierClass.skillTreeRoot, availableAbilities);
+        return availableAbilities;
+    }
+
+    private void CheckAvailableAbilitiesRecursive(SoldierClass.SkillTreeNode node, List<Ability> availableAbilities)
+    {
+        if (!node.isUnlocked && CanUnlockNode(node))
         {
-            case "Health":
-                unit.maxHealth += Mathf.RoundToInt(improvement);
-                unit.currentHealth += Mathf.RoundToInt(improvement);
-                break;
-            case "Accuracy":
-                unit.accuracy += Mathf.RoundToInt(improvement);
-                break;
-            case "Damage":
-                unit.damage += Mathf.RoundToInt(improvement);
-                break;
-            case "Movement":
-                unit.movementRange += Mathf.RoundToInt(improvement);
-                break;
+            availableAbilities.Add(node.ability);
         }
+
+        foreach (var child in node.children)
+        {
+            CheckAvailableAbilitiesRecursive(child, availableAbilities);
+        }
+    }
+
+    private bool CanUnlockNode(SoldierClass.SkillTreeNode node)
+    {
+        if (node == soldierClass.skillTreeRoot)
+        {
+            return true;
+        }
+
+        var parent = FindParentNode(soldierClass.skillTreeRoot, node);
+        return parent != null && parent.isUnlocked;
+    }
+
+    private SoldierClass.SkillTreeNode FindParentNode(SoldierClass.SkillTreeNode current, SoldierClass.SkillTreeNode target)
+    {
+        foreach (var child in current.children)
+        {
+            if (child == target)
+            {
+                return current;
+            }
+
+            var result = FindParentNode(child, target);
+            if (result != null)
+            {
+                return result;
+            }
+        }
+
+        return null;
     }
 }
