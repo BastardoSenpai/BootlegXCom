@@ -1,4 +1,4 @@
-# Created by Claude Sonnet 3.5 & ClaudeDev
+# Created by Claude Sonnet 3.5 via ClaudeDev
 
 ## To set up and test the expanded game in Unity:
 
