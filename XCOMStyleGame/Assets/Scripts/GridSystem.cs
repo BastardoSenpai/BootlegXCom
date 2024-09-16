@@ -1,6 +1,8 @@
 using UnityEngine;
 using System.Collections.Generic;
 
+public enum CoverType { None, Half, Full }
+
 public class GridSystem : MonoBehaviour
 {
     public int width = 10;
@@ -72,6 +74,21 @@ public class GridSystem : MonoBehaviour
 
         return neighbors;
     }
+
+    public void SetCoverType(Vector3 worldPosition, CoverType coverType)
+    {
+        Cell cell = GetCellAtPosition(worldPosition);
+        if (cell != null)
+        {
+            cell.CoverType = coverType;
+        }
+    }
+
+    public CoverType GetCoverType(Vector3 worldPosition)
+    {
+        Cell cell = GetCellAtPosition(worldPosition);
+        return cell != null ? cell.CoverType : CoverType.None;
+    }
 }
 
 public class Cell
@@ -79,11 +96,13 @@ public class Cell
     public Vector3 WorldPosition { get; private set; }
     public Vector3Int GridPosition { get; private set; }
     public bool IsOccupied { get; set; }
+    public CoverType CoverType { get; set; }
 
     public Cell(Vector3 worldPos, Vector3Int gridPos)
     {
         WorldPosition = worldPos;
         GridPosition = gridPos;
         IsOccupied = false;
+        CoverType = CoverType.None;
     }
 }

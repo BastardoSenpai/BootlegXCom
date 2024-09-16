@@ -1,36 +1,63 @@
 using UnityEngine;
 using System.Collections.Generic;
 
+public enum GameMode { Normal, Move, Attack }
+
 public class GameManager : MonoBehaviour
 {
     public GridSystem gridSystem;
     public TurnManager turnManager;
     public CombatManager combatManager;
     public SceneSetup sceneSetup;
+    public GameUI gameUI;
 
-    public GameObject unitPrefab;
-    public int numUnits = 4;
+    public GameObject[] unitPrefabs; // Array of different unit prefabs
+    public int numPlayerUnits = 3;
+    public int numEnemyUnits = 3;
 
+    private GameMode currentGameMode = GameMode.Normal;
     private Unit selectedUnit;
-    private Camera mainCamera;
 
     void Start()
-    {
-        mainCamera = Camera.main;
-        InitializeGame();
-    }
-
-    void InitializeGame()
     {
         if (gridSystem == null) gridSystem = GetComponent<GridSystem>();
         if (turnManager == null) turnManager = GetComponent<TurnManager>();
         if (combatManager == null) combatManager = GetComponent<CombatManager>();
         if (sceneSetup == null) sceneSetup = GetComponent<SceneSetup>();
+        if (gameUI == null) gameUI = FindObjectOfType<GameUI>();
 
+        GenerateMap();
         SpawnUnits();
     }
 
+    void GenerateMap()
+    {
+        // Simple procedural generation
+        for (int x = 0; x < gridSystem.width; x++)
+        {
+            for (int y = 0; y < gridSystem.height; y++)
+            {
+                if (Random.value < 0.1f) // 10% chance for full cover
+                {
+                    gridSystem.SetCoverType(new Vector3(x, 0, y), CoverType.Full);
+                    sceneSetup.CreateCoverVisual(new Vector3(x, 0, y), CoverType.Full);
+                }
+                else if (Random.value < 0.2f) // 20% chance for half cover
+                {
+                    gridSystem.SetCoverType(new Vector3(x, 0, y), CoverType.Half);
+                    sceneSetup.CreateCoverVisual(new Vector3(x, 0, y), CoverType.Half);
+                }
+            }
+        }
+    }
+
     void SpawnUnits()
+    {
+        SpawnTeamUnits(numPlayerUnits, true);
+        SpawnTeamUnits(numEnemyUnits, false);
+    }
+
+    void SpawnTeamUnits(int numUnits, bool isPlayerTeam)
     {
         List<Cell> emptyCells = new List<Cell>();
         for (int x = 0; x < gridSystem.width; x++)
@@ -38,7 +65,7 @@ public class GameManager : MonoBehaviour
             for (int y = 0; y < gridSystem.height; y++)
             {
                 Cell cell = gridSystem.GetCellAtPosition(new Vector3(x, 0, y));
-                if (cell != null && !cell.IsOccupied)
+                if (cell != null && !cell.IsOccupied && cell.CoverType == CoverType.None)
                 {
                     emptyCells.Add(cell);
                 }
@@ -53,24 +80,37 @@ public class GameManager : MonoBehaviour
             Cell spawnCell = emptyCells[randomIndex];
             emptyCells.RemoveAt(randomIndex);
 
-            GameObject unitObj = sceneSetup.CreateUnitVisual(spawnCell.WorldPosition);
-            Unit unit = unitObj.AddComponent<Unit>();
+            int unitTypeIndex = Random.Range(0, unitPrefabs.Length);
+            GameObject unitObj = Instantiate(unitPrefabs[unitTypeIndex], spawnCell.WorldPosition, Quaternion.identity);
+            Unit unit = unitObj.GetComponent<Unit>();
             unit.SetPosition(spawnCell);
 
-            turnManager.AddUnit(unit);
+            if (isPlayerTeam)
+            {
+                turnManager.playerUnits.Add(unit);
+                unit.GetComponent<Renderer>().material.color = Color.blue;
+            }
+            else
+            {
+                turnManager.enemyUnits.Add(unit);
+                unit.GetComponent<Renderer>().material.color = Color.red;
+            }
         }
     }
 
     void Update()
     {
-        HandleInput();
+        if (turnManager.IsPlayerTurn())
+        {
+            HandlePlayerInput();
+        }
     }
 
-    void HandleInput()
+    void HandlePlayerInput()
     {
         if (Input.GetMouseButtonDown(0))
         {
-            Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
+            Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
             RaycastHit hit;
 
             if (Physics.Raycast(ray, out hit))
@@ -88,19 +128,34 @@ public class GameManager : MonoBehaviour
     {
         Unit unitOnCell = FindUnitOnCell(cell);
 
-        if (unitOnCell != null)
+        switch (currentGameMode)
         {
-            SelectUnit(unitOnCell);
-        }
-        else if (selectedUnit != null)
-        {
-            MoveSelectedUnit(cell);
+            case GameMode.Normal:
+                if (unitOnCell != null && turnManager.playerUnits.Contains(unitOnCell))
+                {
+                    selectedUnit = unitOnCell;
+                }
+                break;
+            case GameMode.Move:
+                if (selectedUnit != null && selectedUnit.CanMoveTo(cell))
+                {
+                    selectedUnit.Move(cell);
+                    SetGameMode(GameMode.Normal);
+                }
+                break;
+            case GameMode.Attack:
+                if (selectedUnit != null && unitOnCell != null && turnManager.enemyUnits.Contains(unitOnCell))
+                {
+                    combatManager.TryAttack(selectedUnit, unitOnCell);
+                    SetGameMode(GameMode.Normal);
+                }
+                break;
         }
     }
 
     Unit FindUnitOnCell(Cell cell)
     {
-        foreach (Unit unit in turnManager.units)
+        foreach (Unit unit in turnManager.playerUnits.Concat(turnManager.enemyUnits))
         {
             if (gridSystem.GetCellAtPosition(unit.transform.position) == cell)
             {
@@ -110,22 +165,9 @@ public class GameManager : MonoBehaviour
         return null;
     }
 
-    void SelectUnit(Unit unit)
+    public void SetGameMode(GameMode newMode)
     {
-        selectedUnit = unit;
-        Debug.Log($"Selected unit at {unit.transform.position}");
-    }
-
-    void MoveSelectedUnit(Cell targetCell)
-    {
-        if (selectedUnit.CanMoveTo(targetCell))
-        {
-            selectedUnit.SetPosition(targetCell);
-            Debug.Log($"Moved unit to {targetCell.WorldPosition}");
-        }
-        else
-        {
-            Debug.Log("Cannot move to that cell");
-        }
+        currentGameMode = newMode;
+        // Update UI or visual indicators based on the new game mode
     }
 }
