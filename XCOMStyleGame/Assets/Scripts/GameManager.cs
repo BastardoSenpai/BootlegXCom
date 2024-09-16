@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections.Generic;
+using System.Linq;
 
 public enum GameMode { Normal, Move, Attack }
 
@@ -10,13 +11,22 @@ public class GameManager : MonoBehaviour
     public CombatManager combatManager;
     public SceneSetup sceneSetup;
     public GameUI gameUI;
+    public MissionManager missionManager;
+    public EnemyAI enemyAI;
 
-    public GameObject[] unitPrefabs; // Array of different unit prefabs
-    public int numPlayerUnits = 3;
-    public int numEnemyUnits = 3;
+    public GameObject[] unitPrefabs;
+    public int numPlayerUnits = 4;
+    public int numEnemyUnits = 4;
 
     private GameMode currentGameMode = GameMode.Normal;
     private Unit selectedUnit;
+
+    public AudioClip moveSound;
+    public AudioClip attackSound;
+    public AudioClip hitSound;
+    public AudioClip missSound;
+
+    private AudioSource audioSource;
 
     void Start()
     {
@@ -25,30 +35,20 @@ public class GameManager : MonoBehaviour
         if (combatManager == null) combatManager = GetComponent<CombatManager>();
         if (sceneSetup == null) sceneSetup = GetComponent<SceneSetup>();
         if (gameUI == null) gameUI = FindObjectOfType<GameUI>();
+        if (missionManager == null) missionManager = GetComponent<MissionManager>();
+        if (enemyAI == null) enemyAI = GetComponent<EnemyAI>();
+
+        audioSource = gameObject.AddComponent<AudioSource>();
 
         GenerateMap();
         SpawnUnits();
+        turnManager.OnTurnChange += HandleTurnChange;
     }
 
     void GenerateMap()
     {
-        // Simple procedural generation
-        for (int x = 0; x < gridSystem.width; x++)
-        {
-            for (int y = 0; y < gridSystem.height; y++)
-            {
-                if (Random.value < 0.1f) // 10% chance for full cover
-                {
-                    gridSystem.SetCoverType(new Vector3(x, 0, y), CoverType.Full);
-                    sceneSetup.CreateCoverVisual(new Vector3(x, 0, y), CoverType.Full);
-                }
-                else if (Random.value < 0.2f) // 20% chance for half cover
-                {
-                    gridSystem.SetCoverType(new Vector3(x, 0, y), CoverType.Half);
-                    sceneSetup.CreateCoverVisual(new Vector3(x, 0, y), CoverType.Half);
-                }
-            }
-        }
+        gridSystem.CreateGrid();
+        sceneSetup.CreateGridVisual();
     }
 
     void SpawnUnits()
@@ -59,18 +59,7 @@ public class GameManager : MonoBehaviour
 
     void SpawnTeamUnits(int numUnits, bool isPlayerTeam)
     {
-        List<Cell> emptyCells = new List<Cell>();
-        for (int x = 0; x < gridSystem.width; x++)
-        {
-            for (int y = 0; y < gridSystem.height; y++)
-            {
-                Cell cell = gridSystem.GetCellAtPosition(new Vector3(x, 0, y));
-                if (cell != null && !cell.IsOccupied && cell.CoverType == CoverType.None)
-                {
-                    emptyCells.Add(cell);
-                }
-            }
-        }
+        List<Cell> emptyCells = gridSystem.GetAllCells().Where(c => !c.IsOccupied && c.TerrainType != TerrainType.Water).ToList();
 
         for (int i = 0; i < numUnits; i++)
         {
@@ -134,40 +123,73 @@ public class GameManager : MonoBehaviour
                 if (unitOnCell != null && turnManager.playerUnits.Contains(unitOnCell))
                 {
                     selectedUnit = unitOnCell;
+                    gameUI.UpdateSelectedUnitInfo(selectedUnit);
                 }
                 break;
             case GameMode.Move:
                 if (selectedUnit != null && selectedUnit.CanMoveTo(cell))
                 {
                     selectedUnit.Move(cell);
+                    PlaySound(moveSound);
                     SetGameMode(GameMode.Normal);
                 }
                 break;
             case GameMode.Attack:
                 if (selectedUnit != null && unitOnCell != null && turnManager.enemyUnits.Contains(unitOnCell))
                 {
-                    combatManager.TryAttack(selectedUnit, unitOnCell);
+                    bool hit = combatManager.TryAttack(selectedUnit, unitOnCell);
+                    PlaySound(hit ? hitSound : missSound);
                     SetGameMode(GameMode.Normal);
                 }
                 break;
         }
+
+        missionManager.CheckMissionObjectives();
+        gameUI.UpdateMissionInfo(missionManager.GetMissionStatus());
     }
 
     Unit FindUnitOnCell(Cell cell)
     {
-        foreach (Unit unit in turnManager.playerUnits.Concat(turnManager.enemyUnits))
-        {
-            if (gridSystem.GetCellAtPosition(unit.transform.position) == cell)
-            {
-                return unit;
-            }
-        }
-        return null;
+        return turnManager.playerUnits.Concat(turnManager.enemyUnits)
+            .FirstOrDefault(u => gridSystem.GetCellAtPosition(u.transform.position) == cell);
     }
 
     public void SetGameMode(GameMode newMode)
     {
         currentGameMode = newMode;
-        // Update UI or visual indicators based on the new game mode
+        gameUI.UpdateGameMode(newMode);
+    }
+
+    void HandleTurnChange(Unit unit)
+    {
+        if (!turnManager.IsPlayerTurn())
+        {
+            StartEnemyTurn();
+        }
+    }
+
+    void StartEnemyTurn()
+    {
+        foreach (Unit enemyUnit in turnManager.enemyUnits)
+        {
+            enemyAI.PerformTurn(enemyUnit);
+        }
+        turnManager.EndCurrentTurn();
+    }
+
+    public Cell GetRandomEmptyCell()
+    {
+        return gridSystem.GetAllCells()
+            .Where(c => !c.IsOccupied && c.TerrainType != TerrainType.Water)
+            .OrderBy(c => Random.value)
+            .FirstOrDefault();
+    }
+
+    void PlaySound(AudioClip clip)
+    {
+        if (clip != null)
+        {
+            audioSource.PlayOneShot(clip);
+        }
     }
 }
