@@ -1,3 +1,5 @@
+# Created by Claude Sonnet 3.5 & ClaudeDev
+
 ## To set up and test the expanded game in Unity:
 
 Open Unity and create a new 3D project.
