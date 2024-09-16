@@ -81,9 +81,9 @@ public class Unit : MonoBehaviour
         baseMaxHealth = soldier.stats["maxHealth"];
         baseAccuracy = soldier.stats["accuracy"];
         baseMovementRange = soldier.stats["mobility"];
-        
+
         ApplyDifficultySettings();
-        
+
         soldierClass = SoldierClass.GetSoldierClassByType(soldier.classType);
 
         foreach (string weaponName in soldier.inventory)
@@ -111,8 +111,34 @@ public class Unit : MonoBehaviour
 
     void UpdateStatsBasedOnClassAndWeapon()
     {
-        // ... (existing code)
+        // Apply class-specific stat modifiers
+        if (soldierClass != null)
+        {
+            maxHealth = Mathf.RoundToInt(baseMaxHealth * soldierClass.healthMultiplier);
+            movementRange = Mathf.RoundToInt(baseMovementRange * soldierClass.mobilityMultiplier);
+            accuracy = Mathf.RoundToInt(baseAccuracy * soldierClass.accuracyMultiplier);
+        }
 
+        // Apply weapon-specific stat modifiers
+        if (equippedWeapon != null)
+        {
+            attackRange = equippedWeapon.range;
+            accuracy += equippedWeapon.accuracyModifier;
+        }
+        else
+        {
+            attackRange = 1; // Default melee range if no weapon is equipped
+        }
+
+        // Apply equipment bonuses
+        foreach (Equipment equipment in equipments)
+        {
+            maxHealth += equipment.healthBonus;
+            movementRange += equipment.mobilityBonus;
+            accuracy += equipment.accuracyBonus;
+        }
+
+        // Apply difficulty settings
         if (CompareTag("Player"))
         {
             maxHealth = Mathf.RoundToInt(maxHealth * difficultyManager.GetPlayerHealthMultiplier());
@@ -123,6 +149,9 @@ public class Unit : MonoBehaviour
             maxHealth = Mathf.RoundToInt(maxHealth * difficultyManager.GetEnemyHealthMultiplier());
             accuracy = Mathf.RoundToInt(accuracy * difficultyManager.GetEnemyAccuracyMultiplier());
         }
+
+        // Ensure current health doesn't exceed new max health
+        currentHealth = Mathf.Min(currentHealth, maxHealth);
     }
 
     public void ApplyCustomization()
@@ -177,12 +206,134 @@ public class Unit : MonoBehaviour
         }
     }
 
-    // ... (rest of the existing methods)
-
     public int GetDamage()
     {
         int baseDamage = equippedWeapon != null ? equippedWeapon.GetDamage() : 1;
         float multiplier = CompareTag("Player") ? difficultyManager.GetPlayerDamageMultiplier() : difficultyManager.GetEnemyDamageMultiplier();
         return Mathf.RoundToInt(baseDamage * multiplier);
+    }
+    public void TakeDamage(int damage)
+    {
+        currentHealth -= damage;
+        if (currentHealth <= 0)
+        {
+            Die();
+        }
+    }
+
+    public void Move(Cell targetCell)
+    {
+        if (CanMove(targetCell))
+        {
+            currentCell = targetCell;
+            transform.position = targetCell.WorldPosition;
+            actionPoints -= CalculateMovementCost(targetCell);
+            hasMoved = true;
+        }
+    }
+
+    public bool CanMove(Cell targetCell)
+    {
+        return !hasMoved &&
+               actionPoints >= CalculateMovementCost(targetCell) &&
+               gridSystem.IsWithinRange(currentCell, targetCell, movementRange);
+    }
+
+    private int CalculateMovementCost(Cell targetCell)
+    {
+        // Simple implementation: each move costs 1 action point
+        // You can make this more complex based on terrain type, etc.
+        return 1;
+    }
+
+    public void Attack(Unit target)
+    {
+        if (CanAttack(target))
+        {
+            int damage = GetDamage();
+            bool hit = Random.Range(0f, 100f) < accuracy;
+            if (hit)
+            {
+                target.TakeDamage(damage);
+            }
+            actionPoints -= 1; // Assume each attack costs 1 action point
+            hasAttacked = true;
+        }
+    }
+
+    public bool CanAttack(Unit target)
+    {
+        return !hasAttacked &&
+               actionPoints > 0 &&
+               gridSystem.IsWithinRange(currentCell, gridSystem.GetCellAtPosition(target.transform.position), attackRange);
+    }
+
+    public void EndTurn()
+    {
+        hasMoved = false;
+        hasAttacked = false;
+        actionPoints = maxActionPoints;
+    }
+
+    public void SetPosition(Cell cell)
+    {
+        currentCell = cell;
+        transform.position = cell.WorldPosition;
+    }
+
+    private void Die()
+    {
+        // Handle unit death (e.g., play death animation, remove from game, etc.)
+        gameObject.SetActive(false);
+        // Notify the TurnManager or other relevant systems about the unit's death
+    }
+
+    public void Heal(int amount)
+    {
+        currentHealth = Mathf.Min(currentHealth + amount, maxHealth);
+    }
+
+    public void EquipWeapon(Weapon weapon)
+    {
+        if (inventory.Contains(weapon))
+        {
+            equippedWeapon = weapon;
+            UpdateStatsBasedOnClassAndWeapon();
+        }
+    }
+
+    public void AddToInventory(Weapon weapon)
+    {
+        if (!inventory.Contains(weapon))
+        {
+            inventory.Add(weapon);
+        }
+    }
+
+    public void RemoveFromInventory(Weapon weapon)
+    {
+        inventory.Remove(weapon);
+        if (equippedWeapon == weapon)
+        {
+            equippedWeapon = inventory.Count > 0 ? inventory[0] : null;
+            UpdateStatsBasedOnClassAndWeapon();
+        }
+    }
+
+    public void EquipItem(Equipment item)
+    {
+        if (!equipments.Contains(item))
+        {
+            equipments.Add(item);
+            UpdateStatsBasedOnClassAndWeapon();
+        }
+    }
+
+    public void UnequipItem(Equipment item)
+    {
+        if (equipments.Remove(item))
+        {
+            UpdateStatsBasedOnClassAndWeapon();
+        }
     }
 }

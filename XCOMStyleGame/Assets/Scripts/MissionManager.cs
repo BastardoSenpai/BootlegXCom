@@ -113,7 +113,72 @@ public class MissionManager : MonoBehaviour
         }
     }
 
-    // Existing mission generation methods...
+    void GenerateEliminationMission()
+    {
+        int enemyCount = Random.Range(4, 7);
+        objectives.Add(new MissionObjective { description = $"Eliminate all {enemyCount} enemy units", completed = false, progress = 0, requiredProgress = enemyCount });
+        objectives.Add(new MissionObjective { description = "Extract all units", completed = false });
+        extractionPoint = mapGenerator.GetExtractionPoint();
+    }
+
+    void GenerateExtractionMission()
+    {
+        objectives.Add(new MissionObjective { description = "Reach the extraction point", completed = false });
+        objectives.Add(new MissionObjective { description = "Extract all units", completed = false });
+        extractionPoint = mapGenerator.GetExtractionPoint();
+    }
+
+    void GenerateVIPRescueMission()
+    {
+        vipUnit = mapGenerator.SpawnVIP();
+        objectives.Add(new MissionObjective { description = "Locate and secure the VIP", completed = false });
+        objectives.Add(new MissionObjective { description = "Escort VIP to extraction point", completed = false });
+        objectives.Add(new MissionObjective { description = "Extract all units including VIP", completed = false });
+        extractionPoint = mapGenerator.GetExtractionPoint();
+    }
+
+    void GenerateHackTerminalMission()
+    {
+        terminalLocation = mapGenerator.GetTerminalLocation();
+        objectives.Add(new MissionObjective { description = "Reach the terminal", completed = false });
+        objectives.Add(new MissionObjective { description = "Hack the terminal", completed = false, progress = 0, requiredProgress = 3 });
+        objectives.Add(new MissionObjective { description = "Extract all units", completed = false });
+        extractionPoint = mapGenerator.GetExtractionPoint();
+    }
+
+    void GenerateDefendPositionMission()
+    {
+        defensePosition = mapGenerator.GetDefensePosition();
+        int turnsToDefend = Random.Range(5, 8);
+        objectives.Add(new MissionObjective { description = $"Defend the position for {turnsToDefend} turns", completed = false, progress = 0, requiredProgress = turnsToDefend });
+        objectives.Add(new MissionObjective { description = "Eliminate all enemies", completed = false });
+    }
+
+    void GenerateSabotageMission()
+    {
+        List<Cell> sabotageTargets = mapGenerator.GetSabotageTargets();
+        int targetsToSabotage = Mathf.Min(sabotageTargets.Count, Random.Range(2, 4));
+        objectives.Add(new MissionObjective { description = $"Sabotage {targetsToSabotage} enemy targets", completed = false, progress = 0, requiredProgress = targetsToSabotage });
+        objectives.Add(new MissionObjective { description = "Extract all units", completed = false });
+        extractionPoint = mapGenerator.GetExtractionPoint();
+    }
+
+    void GenerateIntelGatheringMission()
+    {
+        intelLocations = mapGenerator.GetIntelLocations();
+        int intelToGather = Mathf.Min(intelLocations.Count, Random.Range(3, 6));
+        objectives.Add(new MissionObjective { description = $"Gather {intelToGather} pieces of intel", completed = false, progress = 0, requiredProgress = intelToGather });
+        objectives.Add(new MissionObjective { description = "Extract all units", completed = false });
+        extractionPoint = mapGenerator.GetExtractionPoint();
+    }
+
+    void GenerateBossEncounterMission()
+    {
+        bossUnit = mapGenerator.SpawnBossEnemy();
+        objectives.Add(new MissionObjective { description = "Defeat the boss enemy", completed = false });
+        objectives.Add(new MissionObjective { description = "Extract all units", completed = false });
+        extractionPoint = mapGenerator.GetExtractionPoint();
+    }
 
     void GenerateSupplyRaidMission()
     {
@@ -212,7 +277,93 @@ public class MissionManager : MonoBehaviour
         }
     }
 
-    // Existing objective checking methods...
+    void CheckEliminationObjectives()
+    {
+        MissionObjective eliminateObjective = objectives[0];
+        eliminateObjective.progress = turnManager.initialEnemyCount - turnManager.enemyUnits.Count;
+        eliminateObjective.completed = eliminateObjective.progress >= eliminateObjective.requiredProgress;
+
+        bool allUnitsExtracted = turnManager.playerUnits.All(u => gridSystem.GetCellAtPosition(u.transform.position) == extractionPoint);
+        objectives[1].completed = allUnitsExtracted && eliminateObjective.completed;
+    }
+
+    void CheckExtractionObjectives()
+    {
+        bool anyUnitAtExtractionPoint = turnManager.playerUnits.Any(u => gridSystem.GetCellAtPosition(u.transform.position) == extractionPoint);
+        objectives[0].completed = anyUnitAtExtractionPoint;
+
+        bool allUnitsExtracted = turnManager.playerUnits.All(u => gridSystem.GetCellAtPosition(u.transform.position) == extractionPoint);
+        objectives[1].completed = allUnitsExtracted;
+    }
+
+    void CheckVIPRescueObjectives()
+    {
+        bool vipSecured = turnManager.playerUnits.Any(u => Vector3.Distance(u.transform.position, vipUnit.transform.position) <= 1f);
+        objectives[0].completed = vipSecured;
+
+        bool vipAtExtractionPoint = Vector3.Distance(vipUnit.transform.position, extractionPoint.WorldPosition) <= 1f;
+        objectives[1].completed = vipAtExtractionPoint;
+
+        bool allUnitsExtracted = turnManager.playerUnits.All(u => gridSystem.GetCellAtPosition(u.transform.position) == extractionPoint);
+        objectives[2].completed = allUnitsExtracted && vipAtExtractionPoint;
+    }
+
+    void CheckHackTerminalObjectives()
+    {
+        bool unitAtTerminal = turnManager.playerUnits.Any(u => Vector3.Distance(u.transform.position, terminalLocation.WorldPosition) <= 1f);
+        objectives[0].completed = unitAtTerminal;
+
+        if (unitAtTerminal && objectives[1].progress < objectives[1].requiredProgress)
+        {
+            objectives[1].progress++;
+        }
+        objectives[1].completed = objectives[1].progress >= objectives[1].requiredProgress;
+
+        bool allUnitsExtracted = turnManager.playerUnits.All(u => gridSystem.GetCellAtPosition(u.transform.position) == extractionPoint);
+        objectives[2].completed = allUnitsExtracted && objectives[1].completed;
+    }
+
+    void CheckDefendPositionObjectives()
+    {
+        bool anyUnitAtDefensePosition = turnManager.playerUnits.Any(u => Vector3.Distance(u.transform.position, defensePosition.WorldPosition) <= 1f);
+        if (anyUnitAtDefensePosition)
+        {
+            objectives[0].progress++;
+        }
+        objectives[0].completed = objectives[0].progress >= objectives[0].requiredProgress;
+
+        objectives[1].completed = turnManager.enemyUnits.Count == 0;
+    }
+
+    void CheckSabotageObjectives()
+    {
+        MissionObjective sabotageObjective = objectives[0];
+        sabotageObjective.progress = mapGenerator.GetSabotageTargets().Count(target => 
+            turnManager.playerUnits.Exists(u => Vector3.Distance(u.transform.position, target.WorldPosition) <= 1f));
+        sabotageObjective.completed = sabotageObjective.progress >= sabotageObjective.requiredProgress;
+
+        bool allUnitsExtracted = turnManager.playerUnits.All(u => gridSystem.GetCellAtPosition(u.transform.position) == extractionPoint);
+        objectives[1].completed = allUnitsExtracted && sabotageObjective.completed;
+    }
+
+    void CheckIntelGatheringObjectives()
+    {
+        MissionObjective gatherObjective = objectives[0];
+        gatherObjective.progress = intelLocations.Count(location => 
+            turnManager.playerUnits.Exists(u => Vector3.Distance(u.transform.position, location.WorldPosition) <= 1f));
+        gatherObjective.completed = gatherObjective.progress >= gatherObjective.requiredProgress;
+
+        bool allUnitsExtracted = turnManager.playerUnits.All(u => gridSystem.GetCellAtPosition(u.transform.position) == extractionPoint);
+        objectives[1].completed = allUnitsExtracted && gatherObjective.completed;
+    }
+
+    void CheckBossEncounterObjectives()
+    {
+        objectives[0].completed = bossUnit == null || bossUnit.currentHealth <= 0;
+
+        bool allUnitsExtracted = turnManager.playerUnits.All(u => gridSystem.GetCellAtPosition(u.transform.position) == extractionPoint);
+        objectives[1].completed = allUnitsExtracted && objectives[0].completed;
+    }
 
     void CheckSupplyRaidObjectives()
     {
@@ -260,6 +411,4 @@ public class MissionManager : MonoBehaviour
         bool allUnitsExtracted = turnManager.playerUnits.All(u => gridSystem.GetCellAtPosition(u.transform.position) == extractionPoint);
         objectives[2].completed = allUnitsExtracted && vipAtExtractionPoint;
     }
-
-    // ... (rest of the existing methods)
 }
