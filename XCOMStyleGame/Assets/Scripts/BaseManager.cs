@@ -2,160 +2,192 @@ using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
 
+[System.Serializable]
+public class Facility
+{
+    public string name;
+    public string description;
+    public int constructionTime;
+    public int powerUsage;
+    public int resourceCost;
+    public List<string> prerequisites = new List<string>();
+    public bool isConstructed = false;
+}
+
 public class BaseManager : MonoBehaviour
 {
     public CampaignManager campaignManager;
-    
-    [System.Serializable]
-    public class Research
-    {
-        public string name;
-        public string description;
-        public int cost;
-        public int turnsToComplete;
-        public bool isCompleted;
-        public List<string> requirements;
-    }
+    public ResearchManager researchManager;
 
-    [System.Serializable]
-    public class Facility
-    {
-        public string name;
-        public string description;
-        public int cost;
-        public int capacity;
-        public int count;
-    }
+    public List<Facility> availableFacilities = new List<Facility>();
+    public List<Facility> constructedFacilities = new List<Facility>();
+    public Facility currentConstruction;
 
-    [System.Serializable]
-    public class Item
-    {
-        public string name;
-        public string description;
-        public int cost;
-        public int count;
-    }
+    public int power = 0;
+    public int resources = 1000;
 
-    public List<Research> availableResearch = new List<Research>();
-    public List<Facility> facilities = new List<Facility>();
-    public List<Item> inventory = new List<Item>();
+    private int currentDay = 0;
+    private int remainingConstructionDays = 0;
 
-    private Research currentResearch;
-    private int remainingResearchTurns;
+    public delegate void FacilityConstructedDelegate(Facility facility);
+    public event FacilityConstructedDelegate OnFacilityConstructed;
 
     void Start()
     {
-        campaignManager = CampaignManager.Instance;
-        InitializeBaseData();
+        campaignManager = FindObjectOfType<CampaignManager>();
+        researchManager = FindObjectOfType<ResearchManager>();
+        InitializeFacilities();
     }
 
-    void InitializeBaseData()
+    void InitializeFacilities()
     {
-        // Initialize available research
-        availableResearch = new List<Research>
+        availableFacilities = new List<Facility>
         {
-            new Research { name = "Advanced Weapons", description = "Unlock better weapons", cost = 100, turnsToComplete = 5, requirements = new List<string>() },
-            new Research { name = "Improved Armor", description = "Enhance soldier protection", cost = 150, turnsToComplete = 6, requirements = new List<string>() },
-            new Research { name = "Psionic Abilities", description = "Unlock mental powers", cost = 200, turnsToComplete = 8, requirements = new List<string> { "Advanced Weapons" } }
-        };
-
-        // Initialize facilities
-        facilities = new List<Facility>
-        {
-            new Facility { name = "Laboratory", description = "Speeds up research", cost = 200, capacity = 2, count = 1 },
-            new Facility { name = "Workshop", description = "Reduces item costs", cost = 150, capacity = 2, count = 1 },
-            new Facility { name = "Power Generator", description = "Provides power for the base", cost = 100, capacity = 0, count = 1 }
-        };
-
-        // Initialize inventory
-        inventory = new List<Item>
-        {
-            new Item { name = "Medkit", description = "Heals soldiers", cost = 50, count = 2 },
-            new Item { name = "Grenade", description = "Explosive device", cost = 75, count = 3 }
+            new Facility
+            {
+                name = "Power Generator",
+                description = "Generates power for the base.",
+                constructionTime = 5,
+                powerUsage = -10,
+                resourceCost = 100
+            },
+            new Facility
+            {
+                name = "Laboratory",
+                description = "Increases research speed.",
+                constructionTime = 10,
+                powerUsage = 3,
+                resourceCost = 200,
+                prerequisites = new List<string> { "Power Generator" }
+            },
+            new Facility
+            {
+                name = "Workshop",
+                description = "Increases engineering efficiency.",
+                constructionTime = 10,
+                powerUsage = 3,
+                resourceCost = 200,
+                prerequisites = new List<string> { "Power Generator" }
+            },
+            new Facility
+            {
+                name = "Barracks",
+                description = "Increases soldier capacity.",
+                constructionTime = 7,
+                powerUsage = 2,
+                resourceCost = 150
+            },
+            new Facility
+            {
+                name = "Psi Lab",
+                description = "Allows training of psionic abilities.",
+                constructionTime = 15,
+                powerUsage = 5,
+                resourceCost = 300,
+                prerequisites = new List<string> { "Laboratory", "Psionic Abilities" }
+            }
         };
     }
 
-    public void StartResearch(string researchName)
+    public void StartConstruction(string facilityName)
     {
-        Research research = availableResearch.Find(r => r.name == researchName && !r.isCompleted);
-        if (research != null && campaignManager.currentCampaign.resources >= research.cost)
+        Facility facility = availableFacilities.Find(f => f.name == facilityName);
+        if (facility != null && CanConstructFacility(facility))
         {
-            campaignManager.currentCampaign.resources -= research.cost;
-            currentResearch = research;
-            remainingResearchTurns = research.turnsToComplete;
-            Debug.Log($"Started research on {researchName}");
+            currentConstruction = facility;
+            remainingConstructionDays = facility.constructionTime;
+            resources -= facility.resourceCost;
+            availableFacilities.Remove(facility);
+            Debug.Log($"Started construction of {facilityName}");
         }
         else
         {
-            Debug.Log("Cannot start research: Not available or insufficient resources");
+            Debug.Log($"Cannot construct {facilityName}");
         }
     }
 
-    public void ProgressResearch()
+    public void AdvanceDay()
     {
-        if (currentResearch != null)
+        currentDay++;
+        if (currentConstruction != null)
         {
-            remainingResearchTurns--;
-            if (remainingResearchTurns <= 0)
+            remainingConstructionDays--;
+            if (remainingConstructionDays <= 0)
             {
-                CompleteResearch();
+                CompleteCurrentConstruction();
             }
         }
+
+        researchManager.AdvanceDay();
+        UpdateResources();
     }
 
-    private void CompleteResearch()
+    private void CompleteCurrentConstruction()
     {
-        currentResearch.isCompleted = true;
-        Debug.Log($"Research completed: {currentResearch.name}");
-        // Apply research effects (e.g., unlock new items, improve stats)
-        currentResearch = null;
+        currentConstruction.isConstructed = true;
+        constructedFacilities.Add(currentConstruction);
+        power += currentConstruction.powerUsage;
+        Debug.Log($"Construction completed: {currentConstruction.name}");
+        OnFacilityConstructed?.Invoke(currentConstruction);
+
+        // Unlock new facilities
+        List<Facility> newlyAvailable = availableFacilities.Where(f => 
+            f.prerequisites.All(prereq => constructedFacilities.Any(cf => cf.name == prereq) || 
+                                          researchManager.GetUnlockedTechnologies().Contains(prereq))).ToList();
+
+        foreach (var facility in newlyAvailable)
+        {
+            Debug.Log($"New facility available: {facility.name}");
+        }
+
+        currentConstruction = null;
     }
 
-    public void BuildFacility(string facilityName)
+    private bool CanConstructFacility(Facility facility)
     {
-        Facility facility = facilities.Find(f => f.name == facilityName);
-        if (facility != null && campaignManager.currentCampaign.resources >= facility.cost)
-        {
-            campaignManager.currentCampaign.resources -= facility.cost;
-            facility.count++;
-            Debug.Log($"Built new {facilityName}");
-        }
-        else
-        {
-            Debug.Log("Cannot build facility: Not available or insufficient resources");
-        }
+        return resources >= facility.resourceCost &&
+               power + facility.powerUsage >= 0 &&
+               facility.prerequisites.All(prereq => 
+                   constructedFacilities.Any(cf => cf.name == prereq) || 
+                   researchManager.GetUnlockedTechnologies().Contains(prereq));
     }
 
-    public void CraftItem(string itemName)
+    public List<Facility> GetAvailableFacilities()
     {
-        Item item = inventory.Find(i => i.name == itemName);
-        if (item != null && campaignManager.currentCampaign.resources >= item.cost)
-        {
-            campaignManager.currentCampaign.resources -= item.cost;
-            item.count++;
-            Debug.Log($"Crafted new {itemName}");
-        }
-        else
-        {
-            Debug.Log("Cannot craft item: Not available or insufficient resources");
-        }
+        return availableFacilities.Where(f => CanConstructFacility(f)).ToList();
+    }
+
+    public float GetConstructionProgress()
+    {
+        if (currentConstruction == null) return 0f;
+        return 1f - (float)remainingConstructionDays / currentConstruction.constructionTime;
+    }
+
+    private void UpdateResources()
+    {
+        // Simulate resource generation based on constructed facilities
+        int resourceGeneration = 50; // Base resource generation
+        resourceGeneration += constructedFacilities.Count(f => f.name == "Workshop") * 20;
+        resources += resourceGeneration;
     }
 
     public int GetResearchSpeedBonus()
     {
-        Facility lab = facilities.Find(f => f.name == "Laboratory");
-        return lab != null ? lab.count * lab.capacity : 0;
+        return constructedFacilities.Count(f => f.name == "Laboratory") * 10; // 10% bonus per lab
     }
 
-    public float GetCraftingCostReduction()
+    public int GetEngineeringEfficiencyBonus()
     {
-        Facility workshop = facilities.Find(f => f.name == "Workshop");
-        return workshop != null ? workshop.count * 0.05f : 0f; // 5% reduction per workshop
+        return constructedFacilities.Count(f => f.name == "Workshop") * 5; // 5% bonus per workshop
     }
 
-    public int GetTotalPower()
+    public int GetSoldierCapacity()
     {
-        Facility powerGen = facilities.Find(f => f.name == "Power Generator");
-        return powerGen != null ? powerGen.count * 5 : 0; // 5 power per generator
+        return 4 + constructedFacilities.Count(f => f.name == "Barracks") * 4; // Base 4 + 4 per barracks
+    }
+
+    public bool HasPsiLab()
+    {
+        return constructedFacilities.Any(f => f.name == "Psi Lab");
     }
 }

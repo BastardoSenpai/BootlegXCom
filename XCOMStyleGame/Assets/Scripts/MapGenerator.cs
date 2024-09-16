@@ -9,6 +9,7 @@ public class MapGenerator : MonoBehaviour
     public GameObject[] coverPrefabs;
     public GameObject[] obstaclePrefabs;
     public GameObject[] doodadPrefabs;
+    public GameObject[] environmentalObjectPrefabs;
 
     private List<Cell> availableCells = new List<Cell>();
 
@@ -19,6 +20,7 @@ public class MapGenerator : MonoBehaviour
         GenerateTerrain();
         PlaceCoverAndObstacles();
         PlaceDoodads();
+        PlaceEnvironmentalObjects();
 
         switch (missionType)
         {
@@ -49,54 +51,18 @@ public class MapGenerator : MonoBehaviour
         }
     }
 
-    private void ClearExistingMap()
+    // ... (previous methods remain the same)
+
+    private void PlaceEnvironmentalObjects()
     {
-        // Destroy all existing map objects
-        foreach (Transform child in transform)
-        {
-            Destroy(child.gameObject);
-        }
+        int hazardCount = Mathf.FloorToInt(availableCells.Count * 0.05f);
+        int interactiveCount = Mathf.FloorToInt(availableCells.Count * 0.03f);
+
+        PlaceHazards(hazardCount);
+        PlaceInteractiveObjects(interactiveCount);
     }
 
-    private void InitializeGrid()
-    {
-        gridSystem.CreateGrid();
-        availableCells = gridSystem.GetAllCells().ToList();
-    }
-
-    private void GenerateTerrain()
-    {
-        for (int x = 0; x < gridSystem.width; x++)
-        {
-            for (int y = 0; y < gridSystem.height; y++)
-            {
-                Cell cell = gridSystem.GetCellAtPosition(new Vector3(x, 0, y));
-                if (cell != null)
-                {
-                    GameObject terrainPrefab = terrainPrefabs[Random.Range(0, terrainPrefabs.Length)];
-                    GameObject terrain = Instantiate(terrainPrefab, cell.WorldPosition, Quaternion.identity, transform);
-                    terrain.name = $"Terrain_{x}_{y}";
-                }
-            }
-        }
-    }
-
-    private void PlaceCoverAndObstacles()
-    {
-        int coverCount = Mathf.FloorToInt(availableCells.Count * 0.2f);
-        int obstacleCount = Mathf.FloorToInt(availableCells.Count * 0.1f);
-
-        PlaceObjects(coverPrefabs, coverCount, "Cover");
-        PlaceObjects(obstaclePrefabs, obstacleCount, "Obstacle");
-    }
-
-    private void PlaceDoodads()
-    {
-        int doodadCount = Mathf.FloorToInt(availableCells.Count * 0.05f);
-        PlaceObjects(doodadPrefabs, doodadCount, "Doodad");
-    }
-
-    private void PlaceObjects(GameObject[] prefabs, int count, string namePrefix)
+    private void PlaceHazards(int count)
     {
         for (int i = 0; i < count; i++)
         {
@@ -106,122 +72,53 @@ public class MapGenerator : MonoBehaviour
             Cell cell = availableCells[randomIndex];
             availableCells.RemoveAt(randomIndex);
 
-            GameObject prefab = prefabs[Random.Range(0, prefabs.Length)];
-            GameObject obj = Instantiate(prefab, cell.WorldPosition, Quaternion.Euler(0, Random.Range(0, 4) * 90, 0), transform);
-            obj.name = $"{namePrefix}_{i}";
+            GameObject hazardPrefab = GetRandomHazardPrefab();
+            GameObject hazard = Instantiate(hazardPrefab, cell.WorldPosition, Quaternion.identity, transform);
+            hazard.name = $"Hazard_{i}";
 
-            if (namePrefix == "Cover" || namePrefix == "Obstacle")
+            EnvironmentalObject envObject = hazard.GetComponent<EnvironmentalObject>();
+            if (envObject != null)
             {
-                cell.CoverType = (namePrefix == "Cover") ? CoverType.Half : CoverType.Full;
+                envObject.objectType = EnvironmentalObjectType.Hazard;
             }
         }
     }
 
-    private void GenerateEliminationMap()
+    private void PlaceInteractiveObjects(int count)
     {
-        // Add specific elements for elimination missions
-        // e.g., enemy spawn points, strategic positions
-    }
-
-    private void GenerateExtractionMap()
-    {
-        // Add specific elements for extraction missions
-        // e.g., extraction zone, hazards
-    }
-
-    private void GenerateVIPRescueMap()
-    {
-        // Add specific elements for VIP rescue missions
-        // e.g., VIP location, enemy patrols
-    }
-
-    private void GenerateHackTerminalMap()
-    {
-        // Add specific elements for hack terminal missions
-        // e.g., terminal location, defensive positions
-    }
-
-    private void GenerateDefendPositionMap()
-    {
-        // Add specific elements for defend position missions
-        // e.g., defense zone, enemy approach paths
-    }
-
-    private void GenerateSabotageMap()
-    {
-        // Add specific elements for sabotage missions
-        // e.g., sabotage targets, security measures
-    }
-
-    private void GenerateIntelGatheringMap()
-    {
-        // Add specific elements for intel gathering missions
-        // e.g., intel locations, patrol routes
-    }
-
-    private void GenerateBossEncounterMap()
-    {
-        // Add specific elements for boss encounter missions
-        // e.g., boss arena, minion spawn points
-    }
-
-    public Cell GetExtractionPoint()
-    {
-        return GetRandomAvailableCell();
-    }
-
-    public Cell GetTerminalLocation()
-    {
-        return GetRandomAvailableCell();
-    }
-
-    public Cell GetDefensePosition()
-    {
-        return GetRandomAvailableCell();
-    }
-
-    public List<Cell> GetSabotageTargets()
-    {
-        int targetCount = Random.Range(2, 5);
-        return GetRandomAvailableCells(targetCount);
-    }
-
-    public List<Cell> GetIntelLocations()
-    {
-        int locationCount = Random.Range(3, 6);
-        return GetRandomAvailableCells(locationCount);
-    }
-
-    public Cell GetVIPSpawnLocation()
-    {
-        return GetRandomAvailableCell();
-    }
-
-    public Cell GetBossSpawnLocation()
-    {
-        return GetRandomAvailableCell();
-    }
-
-    private Cell GetRandomAvailableCell()
-    {
-        if (availableCells.Count == 0) return null;
-        int randomIndex = Random.Range(0, availableCells.Count);
-        Cell cell = availableCells[randomIndex];
-        availableCells.RemoveAt(randomIndex);
-        return cell;
-    }
-
-    private List<Cell> GetRandomAvailableCells(int count)
-    {
-        List<Cell> cells = new List<Cell>();
         for (int i = 0; i < count; i++)
         {
-            Cell cell = GetRandomAvailableCell();
-            if (cell != null)
+            if (availableCells.Count == 0) break;
+
+            int randomIndex = Random.Range(0, availableCells.Count);
+            Cell cell = availableCells[randomIndex];
+            availableCells.RemoveAt(randomIndex);
+
+            GameObject interactivePrefab = GetRandomInteractiveObjectPrefab();
+            GameObject interactive = Instantiate(interactivePrefab, cell.WorldPosition, Quaternion.identity, transform);
+            interactive.name = $"Interactive_{i}";
+
+            EnvironmentalObject envObject = interactive.GetComponent<EnvironmentalObject>();
+            if (envObject != null)
             {
-                cells.Add(cell);
+                envObject.objectType = EnvironmentalObjectType.Interactive;
             }
         }
-        return cells;
     }
+
+    private GameObject GetRandomHazardPrefab()
+    {
+        // Implement logic to select a random hazard prefab
+        // This depends on how you've set up your hazard prefabs
+        return environmentalObjectPrefabs.FirstOrDefault(p => p.GetComponent<EnvironmentalObject>()?.objectType == EnvironmentalObjectType.Hazard);
+    }
+
+    private GameObject GetRandomInteractiveObjectPrefab()
+    {
+        // Implement logic to select a random interactive object prefab
+        // This depends on how you've set up your interactive object prefabs
+        return environmentalObjectPrefabs.FirstOrDefault(p => p.GetComponent<EnvironmentalObject>()?.objectType == EnvironmentalObjectType.Interactive);
+    }
+
+    // ... (rest of the methods remain the same)
 }
