@@ -55,14 +55,23 @@ Assign references to the new systems (ResearchManager, BaseManager, etc.).
 ## To test the expanded game:
 
 Start from the MainMenu scene and begin a new campaign, selecting a difficulty level.
+
 In the CampaignMenu, customize your soldiers' appearances.
+
 In the WorldMap, observe the variety of available missions, including the new types.
+
 Visit the BaseManagement scene to construct and upgrade facilities.
+
 Use the ResearchLab to progress through the tech tree and unlock new technologies.
+
 Select a mission and enter the MissionScene:
+
 Verify that the map layout includes environmental hazards and interactive objects.
+
 Test different mission types and objectives, including the new ones.
+
 Observe how the difficulty settings affect gameplay.
+
 If applicable, engage in a boss fight and test the unique mechanics.
+
 Complete the mission and return to the WorldMap.
-Repeat steps 3-7, progressing through the campaign and testing different aspects of the game.
