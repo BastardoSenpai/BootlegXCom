@@ -4,10 +4,14 @@ using System.Collections.Generic;
 public class Unit : MonoBehaviour
 {
     public string unitName;
+    public int baseMaxHealth;
     public int maxHealth;
     public int currentHealth;
+    public int baseMovementRange;
     public int movementRange;
+    public int baseAttackRange;
     public int attackRange;
+    public int baseAccuracy;
     public int accuracy;
     public int actionPoints;
     public int maxActionPoints;
@@ -23,14 +27,18 @@ public class Unit : MonoBehaviour
 
     private CharacterProgression characterProgression;
     private GridSystem gridSystem;
+    private DifficultyManager difficultyManager;
 
     public GameObject fullCoverVisual;
     public GameObject halfCoverVisual;
 
     // Visual customization
-    public Renderer bodyRenderer;
-    public Renderer faceRenderer;
-    public Renderer hairRenderer;
+    public SoldierCustomization customization;
+    public SkinnedMeshRenderer bodyRenderer;
+    public SkinnedMeshRenderer headRenderer;
+    public SkinnedMeshRenderer hairRenderer;
+    public SkinnedMeshRenderer armorRenderer;
+    public GameObject[] accessoryObjects;
 
     void Start()
     {
@@ -40,28 +48,44 @@ public class Unit : MonoBehaviour
             characterProgression = gameObject.AddComponent<CharacterProgression>();
         }
         gridSystem = FindObjectOfType<GridSystem>();
+        difficultyManager = DifficultyManager.Instance;
         InitializeUnit();
     }
 
     void InitializeUnit()
     {
+        ApplyDifficultySettings();
         currentHealth = maxHealth;
         actionPoints = maxActionPoints;
         UpdateStatsBasedOnClassAndWeapon();
+        ApplyCustomization();
+    }
+
+    void ApplyDifficultySettings()
+    {
+        if (CompareTag("Player"))
+        {
+            maxHealth = Mathf.RoundToInt(baseMaxHealth * difficultyManager.GetPlayerHealthMultiplier());
+            accuracy = Mathf.RoundToInt(baseAccuracy * difficultyManager.GetPlayerAccuracyMultiplier());
+        }
+        else
+        {
+            maxHealth = Mathf.RoundToInt(baseMaxHealth * difficultyManager.GetEnemyHealthMultiplier());
+            accuracy = Mathf.RoundToInt(baseAccuracy * difficultyManager.GetEnemyAccuracyMultiplier());
+        }
     }
 
     public void InitializeFromPersistentSoldier(PersistentSoldier soldier)
     {
         unitName = soldier.name;
-        maxHealth = soldier.stats["maxHealth"];
-        currentHealth = soldier.stats["currentHealth"];
-        accuracy = soldier.stats["accuracy"];
-        movementRange = soldier.stats["mobility"];
+        baseMaxHealth = soldier.stats["maxHealth"];
+        baseAccuracy = soldier.stats["accuracy"];
+        baseMovementRange = soldier.stats["mobility"];
         
-        // Initialize SoldierClass (you'll need to implement this method in the SoldierClass script)
+        ApplyDifficultySettings();
+        
         soldierClass = SoldierClass.GetSoldierClassByType(soldier.classType);
 
-        // Initialize equipment
         foreach (string weaponName in soldier.inventory)
         {
             Weapon weapon = GameManager.Instance.availableWeapons.Find(w => w.weaponName == weaponName);
@@ -75,256 +99,90 @@ public class Unit : MonoBehaviour
             equippedWeapon = inventory[0];
         }
 
-        // Initialize character progression
         characterProgression.level = soldier.level;
         characterProgression.experience = soldier.experience;
         characterProgression.InitializeFromPersistentSoldier(soldier);
 
-        // Apply customization
-        ApplyCustomization(soldier.customization);
+        customization = soldier.customization;
+        ApplyCustomization();
 
         UpdateStatsBasedOnClassAndWeapon();
     }
 
     void UpdateStatsBasedOnClassAndWeapon()
     {
-        if (soldierClass != null)
+        // ... (existing code)
+
+        if (CompareTag("Player"))
         {
-            // Update stats based on soldier class
-            switch (soldierClass.classType)
-            {
-                case SoldierClassType.Assault:
-                    movementRange += 2;
-                    break;
-                case SoldierClassType.Sniper:
-                    accuracy += 10;
-                    break;
-                case SoldierClassType.Heavy:
-                    maxHealth += 20;
-                    currentHealth += 20;
-                    break;
-                case SoldierClassType.Support:
-                    maxActionPoints += 1;
-                    actionPoints += 1;
-                    break;
-            }
-        }
-
-        if (equippedWeapon != null)
-        {
-            // Update stats based on equipped weapon
-            attackRange = equippedWeapon.range;
-            accuracy += equippedWeapon.GetAccuracy();
-        }
-
-        // Apply equipment effects
-        foreach (Equipment equipment in equipments)
-        {
-            equipment.ApplyEffect(this);
-        }
-    }
-
-    public void SetPosition(Cell cell)
-    {
-        if (currentCell != null)
-        {
-            currentCell.IsOccupied = false;
-        }
-
-        currentCell = cell;
-        currentCell.IsOccupied = true;
-        transform.position = cell.WorldPosition + Vector3.up * 0.5f;
-        UpdateCoverVisuals();
-    }
-
-    void UpdateCoverVisuals()
-    {
-        CoverType coverType = GetCurrentCoverType();
-        fullCoverVisual.SetActive(coverType == CoverType.Full);
-        halfCoverVisual.SetActive(coverType == CoverType.Half);
-    }
-
-    public CoverType GetCurrentCoverType()
-    {
-        if (currentCell == null) return CoverType.None;
-
-        CoverType bestCover = CoverType.None;
-        Vector3[] directions = new Vector3[] { Vector3.forward, Vector3.back, Vector3.left, Vector3.right };
-
-        foreach (Vector3 direction in directions)
-        {
-            CoverType coverInDirection = gridSystem.GetCoverTypeInDirection(currentCell, direction);
-            if (coverInDirection > bestCover)
-            {
-                bestCover = coverInDirection;
-            }
-        }
-
-        return bestCover;
-    }
-
-    public bool CanMoveTo(Cell targetCell)
-    {
-        return !hasMoved && actionPoints >= 1 && Vector3.Distance(currentCell.WorldPosition, targetCell.WorldPosition) <= movementRange;
-    }
-
-    public void Move(Cell targetCell)
-    {
-        if (CanMoveTo(targetCell))
-        {
-            SetPosition(targetCell);
-            hasMoved = true;
-            actionPoints--;
-        }
-    }
-
-    public bool CanAttack(Unit target)
-    {
-        return !hasAttacked && actionPoints >= 1 && Vector3.Distance(transform.position, target.transform.position) <= attackRange;
-    }
-
-    public void Attack(Unit target)
-    {
-        if (CanAttack(target))
-        {
-            hasAttacked = true;
-            actionPoints--;
-        }
-    }
-
-    public void TakeDamage(int damage)
-    {
-        currentHealth -= damage;
-        if (currentHealth <= 0)
-        {
-            Die();
-        }
-    }
-
-    public void Heal(int amount)
-    {
-        currentHealth = Mathf.Min(currentHealth + amount, maxHealth);
-    }
-
-    private void Die()
-    {
-        Debug.Log($"{unitName} has been defeated!");
-        Destroy(gameObject);
-    }
-
-    public void StartTurn()
-    {
-        hasMoved = false;
-        hasAttacked = false;
-        actionPoints = maxActionPoints;
-        
-        // Reset ability cooldowns
-        if (soldierClass != null)
-        {
-            foreach (var ability in soldierClass.abilities)
-            {
-                if (ability.currentCooldown > 0)
-                {
-                    ability.currentCooldown--;
-                }
-            }
-        }
-    }
-
-    public void EndTurn()
-    {
-        hasMoved = true;
-        hasAttacked = true;
-        actionPoints = 0;
-    }
-
-    public bool HasRemainingActions()
-    {
-        return actionPoints > 0;
-    }
-
-    public void UseAbility(Ability ability, Unit target)
-    {
-        if (actionPoints >= ability.actionPointCost && ability.currentCooldown <= 0)
-        {
-            ability.Use(this, target);
-            actionPoints -= ability.actionPointCost;
-            ability.currentCooldown = ability.cooldown;
+            maxHealth = Mathf.RoundToInt(maxHealth * difficultyManager.GetPlayerHealthMultiplier());
+            accuracy = Mathf.RoundToInt(accuracy * difficultyManager.GetPlayerAccuracyMultiplier());
         }
         else
         {
-            Debug.Log("Cannot use ability: Not enough action points or ability is on cooldown.");
+            maxHealth = Mathf.RoundToInt(maxHealth * difficultyManager.GetEnemyHealthMultiplier());
+            accuracy = Mathf.RoundToInt(accuracy * difficultyManager.GetEnemyAccuracyMultiplier());
         }
     }
 
-    public void EquipWeapon(Weapon weapon)
+    public void ApplyCustomization()
     {
-        if (inventory.Contains(weapon))
+        if (customization == null)
         {
-            equippedWeapon = weapon;
-            UpdateStatsBasedOnClassAndWeapon();
+            customization = SoldierCustomization.GenerateRandomCustomization();
         }
-        else
-        {
-            Debug.Log("Cannot equip weapon: Weapon not in inventory.");
-        }
-    }
 
-    public void AddWeaponToInventory(Weapon weapon)
-    {
-        if (!inventory.Contains(weapon))
-        {
-            inventory.Add(weapon);
-        }
-    }
-
-    public void RemoveWeaponFromInventory(Weapon weapon)
-    {
-        if (inventory.Contains(weapon))
-        {
-            inventory.Remove(weapon);
-            if (equippedWeapon == weapon)
-            {
-                equippedWeapon = inventory.Count > 0 ? inventory[0] : null;
-                UpdateStatsBasedOnClassAndWeapon();
-            }
-        }
-    }
-
-    public void ApplyCustomization(SoldierCustomization customization)
-    {
         if (bodyRenderer != null)
         {
-            bodyRenderer.material.color = customization.armorColor;
+            bodyRenderer.material.color = customization.skinColor;
         }
 
-        if (faceRenderer != null)
+        if (headRenderer != null)
         {
-            // Apply face customization (you'll need to implement this based on your character model)
-            // For example, changing the texture or material of the face
+            headRenderer.material.SetColor("_SkinColor", customization.skinColor);
+            headRenderer.material.SetColor("_EyeColor", customization.eyeColor);
+            headRenderer.SetBlendShapeWeight(0, customization.faceIndex * 100f); // Assuming blend shapes for faces
         }
 
         if (hairRenderer != null)
         {
             hairRenderer.material.color = customization.hairColor;
-            // Apply hair style (you'll need to implement this based on your character model)
-            // For example, enabling/disabling different hair meshes
+            hairRenderer.gameObject.SetActive(false);
+            Transform hairStyle = hairRenderer.transform.GetChild(customization.hairStyleIndex);
+            if (hairStyle != null)
+            {
+                hairStyle.gameObject.SetActive(true);
+            }
+        }
+
+        if (armorRenderer != null)
+        {
+            Material armorMaterial = armorRenderer.material;
+            armorMaterial.SetColor("_PrimaryColor", customization.armorPrimaryColor);
+            armorMaterial.SetColor("_SecondaryColor", customization.armorSecondaryColor);
+            armorMaterial.SetFloat("_PatternIndex", customization.armorPatternIndex);
+        }
+
+        for (int i = 0; i < accessoryObjects.Length; i++)
+        {
+            if (i < customization.accessories.Count)
+            {
+                accessoryObjects[i].SetActive(true);
+                accessoryObjects[i].name = customization.accessories[i];
+            }
+            else
+            {
+                accessoryObjects[i].SetActive(false);
+            }
         }
     }
 
-    public void LoadFromSaveData(UnitSaveData saveData)
+    // ... (rest of the existing methods)
+
+    public int GetDamage()
     {
-        unitName = saveData.unitName;
-        currentHealth = saveData.currentHealth;
-        actionPoints = saveData.actionPoints;
-        hasMoved = saveData.hasMoved;
-        hasAttacked = saveData.hasAttacked;
-
-        // Set position
-        Cell cell = gridSystem.GetCellAtPosition(saveData.position);
-        SetPosition(cell);
-
-        // Load other necessary data (e.g., equipment, abilities, etc.)
-        // You may need to expand the UnitSaveData class to include this information
+        int baseDamage = equippedWeapon != null ? equippedWeapon.GetDamage() : 1;
+        float multiplier = CompareTag("Player") ? difficultyManager.GetPlayerDamageMultiplier() : difficultyManager.GetEnemyDamageMultiplier();
+        return Mathf.RoundToInt(baseDamage * multiplier);
     }
 }

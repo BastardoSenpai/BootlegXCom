@@ -4,10 +4,12 @@ public class CombatManager : MonoBehaviour
 {
     public LayerMask obstacleLayer;
     private GridSystem gridSystem;
+    private DifficultyManager difficultyManager;
 
     void Start()
     {
         gridSystem = FindObjectOfType<GridSystem>();
+        difficultyManager = DifficultyManager.Instance;
     }
 
     public bool TryAttack(Unit attacker, Unit target)
@@ -36,27 +38,10 @@ public class CombatManager : MonoBehaviour
         else
         {
             Debug.Log($"{attacker.unitName} missed {target.unitName}!");
-            HandleMissedShot(attacker, target);
         }
 
         attacker.Attack(target);
         return isHit;
-    }
-
-    private void HandleMissedShot(Unit attacker, Unit target)
-    {
-        Vector3 shotDirection = (target.transform.position - attacker.transform.position).normalized;
-        RaycastHit hit;
-        if (Physics.Raycast(attacker.transform.position, shotDirection, out hit, attacker.attackRange, obstacleLayer))
-        {
-            DestructibleObject destructible = hit.collider.GetComponent<DestructibleObject>();
-            if (destructible != null)
-            {
-                int damage = CalculateDamage(attacker, null) / 2; // Reduced damage for missed shots
-                destructible.TakeDamage(damage);
-                Debug.Log($"{attacker.unitName}'s missed shot hit destructible object for {damage} damage!");
-            }
-        }
     }
 
     public float CalculateHitChance(Unit attacker, Unit target)
@@ -77,6 +62,16 @@ public class CombatManager : MonoBehaviour
         // Apply modifiers
         float finalHitChance = (baseHitChance + weaponAccuracy) * distanceModifier * coverModifier * angleModifier;
 
+        // Apply difficulty modifier
+        if (attacker.CompareTag("Player"))
+        {
+            finalHitChance *= difficultyManager.GetPlayerAccuracyMultiplier();
+        }
+        else
+        {
+            finalHitChance *= difficultyManager.GetEnemyAccuracyMultiplier();
+        }
+
         return Mathf.Clamp01(finalHitChance);
     }
 
@@ -96,7 +91,7 @@ public class CombatManager : MonoBehaviour
 
     private int CalculateDamage(Unit attacker, Unit target)
     {
-        int baseDamage = attacker.equippedWeapon.GetDamage();
+        int baseDamage = attacker.GetDamage();
         float critChance = attacker.equippedWeapon.GetCriticalChance() / 100f;
 
         // Apply class-specific bonuses
@@ -112,13 +107,10 @@ public class CombatManager : MonoBehaviour
             Debug.Log("Critical hit!");
         }
 
-        // Apply cover damage reduction if target is not null
-        if (target != null)
-        {
-            float coverDamageReduction = 1f - (GetCoverModifier(target) - 0.5f) * 2f;
-            baseDamage = Mathf.RoundToInt(baseDamage * coverDamageReduction);
-        }
+        // Apply cover damage reduction
+        float coverDamageReduction = 1f - (GetCoverModifier(target) - 0.5f) * 2f;
+        int finalDamage = Mathf.RoundToInt(baseDamage * coverDamageReduction);
 
-        return Mathf.Max(1, baseDamage); // Ensure at least 1 damage is dealt
+        return Mathf.Max(1, finalDamage); // Ensure at least 1 damage is dealt
     }
 }

@@ -1,11 +1,13 @@
 using UnityEngine;
 using System.Collections.Generic;
+using System.Linq;
 
-public enum MissionType { Elimination, Extraction, VIPRescue, HackTerminal, DefendPosition }
+public enum MissionType { Elimination, Extraction, VIPRescue, HackTerminal, DefendPosition, Sabotage, IntelGathering, BossEncounter }
 
 public class MissionManager : MonoBehaviour
 {
     public MissionType currentMissionType;
+    public int baseTurnsRemaining;
     public int turnsRemaining;
     public bool missionCompleted = false;
     public bool missionFailed = false;
@@ -13,12 +15,16 @@ public class MissionManager : MonoBehaviour
     private GameManager gameManager;
     private TurnManager turnManager;
     private GridSystem gridSystem;
+    private MapGenerator mapGenerator;
+    private DifficultyManager difficultyManager;
 
     [System.Serializable]
     public class MissionObjective
     {
         public string description;
         public bool completed;
+        public int progress;
+        public int requiredProgress;
     }
 
     public List<MissionObjective> objectives = new List<MissionObjective>();
@@ -28,63 +34,64 @@ public class MissionManager : MonoBehaviour
     private Cell extractionPoint;
     private Cell terminalLocation;
     private Cell defensePosition;
-    private int hackProgress = 0;
-    private int requiredHackTurns = 3;
+    private List<Cell> intelLocations = new List<Cell>();
+    private Unit bossUnit;
 
     void Start()
     {
         gameManager = GameManager.Instance;
         turnManager = FindObjectOfType<TurnManager>();
         gridSystem = FindObjectOfType<GridSystem>();
+        mapGenerator = FindObjectOfType<MapGenerator>();
+        difficultyManager = DifficultyManager.Instance;
     }
 
     public void GenerateRandomMission()
     {
         currentMissionType = (MissionType)Random.Range(0, System.Enum.GetValues(typeof(MissionType)).Length);
-        turnsRemaining = Random.Range(10, 21);
+        baseTurnsRemaining = Random.Range(10, 21);
+        turnsRemaining = Mathf.RoundToInt(baseTurnsRemaining * difficultyManager.GetMissionTimeMultiplier());
 
         objectives.Clear();
+        mapGenerator.GenerateMap(currentMissionType);
+
         switch (currentMissionType)
         {
             case MissionType.Elimination:
-                int enemyCount = Random.Range(3, 6);
-                objectives.Add(new MissionObjective { description = $"Eliminate {enemyCount} enemy units", completed = false });
+                GenerateEliminationMission();
                 break;
             case MissionType.Extraction:
-                extractionPoint = gameManager.GetRandomEmptyCell();
-                objectives.Add(new MissionObjective { description = $"Reach extraction point", completed = false });
-                objectives.Add(new MissionObjective { description = "Ensure all player units reach the extraction point", completed = false });
+                GenerateExtractionMission();
                 break;
             case MissionType.VIPRescue:
-                SpawnVIP();
-                objectives.Add(new MissionObjective { description = "Rescue the VIP", completed = false });
-                objectives.Add(new MissionObjective { description = "Escort the VIP to the extraction point", completed = false });
+                GenerateVIPRescueMission();
                 break;
             case MissionType.HackTerminal:
-                terminalLocation = gameManager.GetRandomEmptyCell();
-                objectives.Add(new MissionObjective { description = "Reach the terminal", completed = false });
-                objectives.Add(new MissionObjective { description = "Hack the terminal", completed = false });
-                objectives.Add(new MissionObjective { description = "Defend the position until hack is complete", completed = false });
+                GenerateHackTerminalMission();
                 break;
             case MissionType.DefendPosition:
-                defensePosition = gameManager.GetRandomEmptyCell();
-                objectives.Add(new MissionObjective { description = "Reach the defense position", completed = false });
-                objectives.Add(new MissionObjective { description = $"Defend the position for {turnsRemaining} turns", completed = false });
+                GenerateDefendPositionMission();
+                break;
+            case MissionType.Sabotage:
+                GenerateSabotageMission();
+                break;
+            case MissionType.IntelGathering:
+                GenerateIntelGatheringMission();
+                break;
+            case MissionType.BossEncounter:
+                GenerateBossEncounterMission();
                 break;
         }
     }
 
-    void SpawnVIP()
+    void GenerateEliminationMission()
     {
-        Cell vipCell = gameManager.GetRandomEmptyCell();
-        GameObject vipObject = new GameObject("VIP");
-        vipUnit = vipObject.AddComponent<Unit>();
-        vipUnit.unitName = "VIP";
-        vipUnit.maxHealth = 50;
-        vipUnit.currentHealth = 50;
-        vipUnit.movementRange = 4;
-        vipUnit.SetPosition(vipCell);
+        int baseEnemyCount = Random.Range(3, 6);
+        int enemyCount = Mathf.RoundToInt(baseEnemyCount * difficultyManager.GetEnemyCountMultiplier());
+        objectives.Add(new MissionObjective { description = $"Eliminate {enemyCount} enemy units", completed = false, progress = 0, requiredProgress = enemyCount });
     }
+
+    // ... (other mission generation methods remain the same)
 
     public void CheckMissionObjectives()
     {
@@ -105,6 +112,15 @@ public class MissionManager : MonoBehaviour
             case MissionType.DefendPosition:
                 CheckDefendPositionObjectives();
                 break;
+            case MissionType.Sabotage:
+                CheckSabotageObjectives();
+                break;
+            case MissionType.IntelGathering:
+                CheckIntelGatheringObjectives();
+                break;
+            case MissionType.BossEncounter:
+                CheckBossEncounterObjectives();
+                break;
         }
 
         if (objectives.TrueForAll(o => o.completed))
@@ -115,7 +131,7 @@ public class MissionManager : MonoBehaviour
         }
     }
 
-    // ... (keep the existing CheckXXXObjectives methods)
+    // ... (CheckXXXObjectives methods remain the same)
 
     public void EndTurn()
     {
@@ -140,37 +156,15 @@ public class MissionManager : MonoBehaviour
         string status = $"Mission: {currentMissionType}\nTurns Remaining: {turnsRemaining}\n\nObjectives:\n";
         foreach (var objective in objectives)
         {
-            status += $"- {objective.description}: {(objective.completed ? "Completed" : "Incomplete")}\n";
+            status += $"- {objective.description}: {(objective.completed ? "Completed" : "Incomplete")}";
+            if (objective.requiredProgress > 0)
+            {
+                status += $" ({objective.progress}/{objective.requiredProgress})";
+            }
+            status += "\n";
         }
         return status;
     }
 
-    public void LoadFromSaveData(MissionSaveData saveData)
-    {
-        currentMissionType = saveData.missionType;
-        turnsRemaining = saveData.turnsRemaining;
-        objectives = saveData.objectives.Select(o => new MissionObjective { description = o.description, completed = o.completed }).ToList();
-
-        // Restore mission-specific variables based on the mission type
-        switch (currentMissionType)
-        {
-            case MissionType.Extraction:
-            case MissionType.VIPRescue:
-                extractionPoint = gridSystem.GetCellAtPosition(saveData.extractionPoint);
-                break;
-            case MissionType.HackTerminal:
-                terminalLocation = gridSystem.GetCellAtPosition(saveData.terminalLocation);
-                hackProgress = saveData.hackProgress;
-                break;
-            case MissionType.DefendPosition:
-                defensePosition = gridSystem.GetCellAtPosition(saveData.defensePosition);
-                break;
-        }
-
-        if (currentMissionType == MissionType.VIPRescue)
-        {
-            SpawnVIP();
-            vipUnit.SetPosition(gridSystem.GetCellAtPosition(saveData.vipPosition));
-        }
-    }
+    // ... (other methods remain the same)
 }

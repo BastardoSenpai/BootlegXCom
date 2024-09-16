@@ -2,12 +2,17 @@ using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
 
+public enum EnemyBehavior { Aggressive, Defensive, Patrol, Guard, Flee }
+
 public class EnemyAI : MonoBehaviour
 {
     private GridSystem gridSystem;
     private CombatManager combatManager;
     private TurnManager turnManager;
     private MissionManager missionManager;
+
+    public float aggressiveThreshold = 0.7f;
+    public float defensiveThreshold = 0.3f;
 
     void Start()
     {
@@ -19,18 +24,48 @@ public class EnemyAI : MonoBehaviour
 
     public void PerformTurn(Unit enemyUnit)
     {
-        List<Unit> playerUnits = turnManager.playerUnits;
+        EnemyBehavior behavior = DetermineBehavior(enemyUnit);
         
         while (enemyUnit.HasRemainingActions())
         {
-            AIAction bestAction = GetBestAction(enemyUnit, playerUnits);
+            AIAction bestAction = GetBestAction(enemyUnit, behavior);
             ExecuteAction(enemyUnit, bestAction);
         }
     }
 
-    private AIAction GetBestAction(Unit enemyUnit, List<Unit> playerUnits)
+    private EnemyBehavior DetermineBehavior(Unit enemyUnit)
+    {
+        float healthPercentage = (float)enemyUnit.currentHealth / enemyUnit.maxHealth;
+        
+        if (healthPercentage <= defensiveThreshold)
+        {
+            return EnemyBehavior.Defensive;
+        }
+        else if (healthPercentage >= aggressiveThreshold)
+        {
+            return EnemyBehavior.Aggressive;
+        }
+        
+        switch (missionManager.currentMissionType)
+        {
+            case MissionType.Elimination:
+            case MissionType.BossEncounter:
+                return EnemyBehavior.Aggressive;
+            case MissionType.DefendPosition:
+            case MissionType.HackTerminal:
+                return EnemyBehavior.Guard;
+            case MissionType.Extraction:
+            case MissionType.VIPRescue:
+                return EnemyBehavior.Patrol;
+            default:
+                return Random.value > 0.5f ? EnemyBehavior.Aggressive : EnemyBehavior.Defensive;
+        }
+    }
+
+    private AIAction GetBestAction(Unit enemyUnit, EnemyBehavior behavior)
     {
         List<AIAction> possibleActions = new List<AIAction>();
+        List<Unit> playerUnits = turnManager.playerUnits;
 
         // Check for attack opportunities
         foreach (Unit target in playerUnits)
@@ -38,7 +73,18 @@ public class EnemyAI : MonoBehaviour
             if (enemyUnit.CanAttack(target))
             {
                 float hitChance = combatManager.CalculateHitChance(enemyUnit, target);
-                possibleActions.Add(new AIAction { type = AIActionType.Attack, target = target, score = hitChance });
+                float score = hitChance;
+                
+                if (behavior == EnemyBehavior.Aggressive)
+                {
+                    score *= 1.5f;
+                }
+                else if (behavior == EnemyBehavior.Defensive)
+                {
+                    score *= 0.5f;
+                }
+                
+                possibleActions.Add(new AIAction { type = AIActionType.Attack, target = target, score = score });
             }
         }
 
@@ -50,16 +96,30 @@ public class EnemyAI : MonoBehaviour
                 Unit bestTarget = GetBestAbilityTarget(enemyUnit, ability, playerUnits);
                 if (bestTarget != null)
                 {
-                    possibleActions.Add(new AIAction { type = AIActionType.UseAbility, ability = ability, target = bestTarget, score = 0.8f });
+                    float score = 0.8f;
+                    if (behavior == EnemyBehavior.Aggressive && ability is OffensiveAbility)
+                    {
+                        score *= 1.5f;
+                    }
+                    else if (behavior == EnemyBehavior.Defensive && ability is SupportAbility)
+                    {
+                        score *= 1.5f;
+                    }
+                    possibleActions.Add(new AIAction { type = AIActionType.UseAbility, ability = ability, target = bestTarget, score = score });
                 }
             }
         }
 
         // Check for movement opportunities
-        Cell bestMoveCell = GetBestMovePosition(enemyUnit, playerUnits);
+        Cell bestMoveCell = GetBestMovePosition(enemyUnit, playerUnits, behavior);
         if (bestMoveCell != null)
         {
-            possibleActions.Add(new AIAction { type = AIActionType.Move, targetCell = bestMoveCell, score = 0.5f });
+            float score = 0.5f;
+            if (behavior == EnemyBehavior.Patrol || behavior == EnemyBehavior.Guard)
+            {
+                score *= 1.5f;
+            }
+            possibleActions.Add(new AIAction { type = AIActionType.Move, targetCell = bestMoveCell, score = score });
         }
 
         // Choose the action with the highest score
@@ -84,21 +144,30 @@ public class EnemyAI : MonoBehaviour
 
     private Unit GetBestAbilityTarget(Unit enemyUnit, Ability ability, List<Unit> playerUnits)
     {
-        // Implement logic to determine the best target for the ability
-        // This could involve checking range, potential damage, or other factors
-        return playerUnits.OrderBy(u => Vector3.Distance(enemyUnit.transform.position, u.transform.position)).FirstOrDefault();
+        if (ability is OffensiveAbility)
+        {
+            return playerUnits.OrderBy(u => u.currentHealth).FirstOrDefault();
+        }
+        else if (ability is SupportAbility)
+        {
+            return turnManager.enemyUnits
+                .Where(u => u != enemyUnit && u.currentHealth < u.maxHealth)
+                .OrderBy(u => u.currentHealth)
+                .FirstOrDefault();
+        }
+        return null;
     }
 
-    private Cell GetBestMovePosition(Unit enemyUnit, List<Unit> playerUnits)
+    private Cell GetBestMovePosition(Unit enemyUnit, List<Unit> playerUnits, EnemyBehavior behavior)
     {
         List<Cell> reachableCells = gridSystem.GetCellsInRange(enemyUnit.transform.position, enemyUnit.movementRange);
         
         return reachableCells
-            .OrderByDescending(cell => EvaluateCellScore(cell, enemyUnit, playerUnits))
+            .OrderByDescending(cell => EvaluateCellScore(cell, enemyUnit, playerUnits, behavior))
             .FirstOrDefault();
     }
 
-    private float EvaluateCellScore(Cell cell, Unit enemyUnit, List<Unit> playerUnits)
+    private float EvaluateCellScore(Cell cell, Unit enemyUnit, List<Unit> playerUnits, EnemyBehavior behavior)
     {
         float score = 0f;
 
@@ -106,22 +175,50 @@ public class EnemyAI : MonoBehaviour
         CoverType coverType = gridSystem.GetCoverTypeAtPosition(cell.WorldPosition);
         score += coverType == CoverType.Full ? 2f : (coverType == CoverType.Half ? 1f : 0f);
 
-        // Prefer cells closer to player units, but not too close
         Unit nearestPlayer = playerUnits.OrderBy(u => Vector3.Distance(cell.WorldPosition, u.transform.position)).FirstOrDefault();
         if (nearestPlayer != null)
         {
             float distanceToPlayer = Vector3.Distance(cell.WorldPosition, nearestPlayer.transform.position);
-            score += Mathf.Clamp(10f - distanceToPlayer, 0f, 5f);
-        }
-
-        // Consider mission objectives
-        if (missionManager.currentMissionType == MissionType.DefendPosition)
-        {
-            float distanceToDefensePosition = Vector3.Distance(cell.WorldPosition, missionManager.defensePosition.WorldPosition);
-            score += 10f / (distanceToDefensePosition + 1f);
+            
+            switch (behavior)
+            {
+                case EnemyBehavior.Aggressive:
+                    score += Mathf.Clamp(10f - distanceToPlayer, 0f, 5f);
+                    break;
+                case EnemyBehavior.Defensive:
+                    score += Mathf.Clamp(distanceToPlayer, 0f, 5f);
+                    break;
+                case EnemyBehavior.Patrol:
+                    score += Mathf.Clamp(5f - Mathf.Abs(5f - distanceToPlayer), 0f, 5f);
+                    break;
+                case EnemyBehavior.Guard:
+                    Cell objectiveCell = GetObjectiveCell();
+                    if (objectiveCell != null)
+                    {
+                        float distanceToObjective = Vector3.Distance(cell.WorldPosition, objectiveCell.WorldPosition);
+                        score += Mathf.Clamp(10f - distanceToObjective, 0f, 5f);
+                    }
+                    break;
+                case EnemyBehavior.Flee:
+                    score += Mathf.Clamp(distanceToPlayer, 0f, 10f);
+                    break;
+            }
         }
 
         return score;
+    }
+
+    private Cell GetObjectiveCell()
+    {
+        switch (missionManager.currentMissionType)
+        {
+            case MissionType.DefendPosition:
+                return missionManager.defensePosition;
+            case MissionType.HackTerminal:
+                return missionManager.terminalLocation;
+            default:
+                return null;
+        }
     }
 }
 
