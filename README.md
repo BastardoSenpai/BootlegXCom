@@ -1,6 +1,8 @@
 ## To set up and test the expanded game in Unity:
 
+Open Unity and create a new 3D project.
 Ensure all scripts are up to date in your Unity project.
+Set up the Unity scene, including creating materials, configuring the camera, and adding components to the GameManager GameObject.
 
 Create the following scenes if you haven't already:
 - MainMenu
