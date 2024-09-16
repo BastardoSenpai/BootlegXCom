@@ -26,6 +26,11 @@ public class Unit : MonoBehaviour
     public GameObject fullCoverVisual;
     public GameObject halfCoverVisual;
 
+    // Visual customization
+    public Renderer bodyRenderer;
+    public Renderer faceRenderer;
+    public Renderer hairRenderer;
+
     void Start()
     {
         characterProgression = GetComponent<CharacterProgression>();
@@ -227,6 +232,40 @@ public class Unit : MonoBehaviour
         if (!inventory.Contains(weapon))
         {
             inventory.Add(weapon);
+        }
+    }
+
+    public void RemoveWeaponFromInventory(Weapon weapon)
+    {
+        if (inventory.Contains(weapon))
+        {
+            inventory.Remove(weapon);
+            if (equippedWeapon == weapon)
+            {
+                equippedWeapon = inventory.Count > 0 ? inventory[0] : null;
+                UpdateStatsBasedOnClassAndWeapon();
+            }
+        }
+    }
+
+    public void ApplyCustomization(SoldierCustomization customization)
+    {
+        if (bodyRenderer != null)
+        {
+            bodyRenderer.material.color = customization.armorColor;
+        }
+
+        if (faceRenderer != null)
+        {
+            // Apply face customization (you'll need to implement this based on your character model)
+            // For example, changing the texture or material of the face
+        }
+
+        if (hairRenderer != null)
+        {
+            hairRenderer.material.color = customization.hairColor;
+            // Apply hair style (you'll need to implement this based on your character model)
+            // For example, enabling/disabling different hair meshes
         }
     }
 }

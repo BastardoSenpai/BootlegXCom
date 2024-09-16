@@ -2,7 +2,7 @@ using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
 
-public enum GameMode { Normal, Move, Attack, UseAbility }
+public enum GameMode { Normal, Move, Attack, UseAbility, Inventory }
 
 public class GameManager : MonoBehaviour
 {
@@ -13,6 +13,7 @@ public class GameManager : MonoBehaviour
     public GameUI gameUI;
     public MissionManager missionManager;
     public EnemyAI enemyAI;
+    public CampaignManager campaignManager;
 
     public GameObject[] unitPrefabs;
     public SoldierClass[] soldierClasses;
@@ -40,9 +41,15 @@ public class GameManager : MonoBehaviour
         if (gameUI == null) gameUI = FindObjectOfType<GameUI>();
         if (missionManager == null) missionManager = GetComponent<MissionManager>();
         if (enemyAI == null) enemyAI = GetComponent<EnemyAI>();
+        if (campaignManager == null) campaignManager = CampaignManager.Instance;
 
         audioSource = gameObject.AddComponent<AudioSource>();
 
+        InitializeGame();
+    }
+
+    void InitializeGame()
+    {
         GenerateMap();
         SpawnUnits();
         turnManager.OnTurnChange += HandleTurnChange;
@@ -56,15 +63,35 @@ public class GameManager : MonoBehaviour
 
     void SpawnUnits()
     {
-        SpawnTeamUnits(numPlayerUnits, true);
-        SpawnTeamUnits(numEnemyUnits, false);
+        SpawnPlayerUnits();
+        SpawnEnemyUnits();
     }
 
-    void SpawnTeamUnits(int numUnits, bool isPlayerTeam)
+    void SpawnPlayerUnits()
     {
         List<Cell> emptyCells = gridSystem.GetAllCells().Where(c => !c.IsOccupied && c.TerrainType != TerrainType.Water).ToList();
 
-        for (int i = 0; i < numUnits; i++)
+        for (int i = 0; i < numPlayerUnits; i++)
+        {
+            if (emptyCells.Count == 0 || i >= campaignManager.currentCampaign.soldiers.Count) break;
+
+            int randomIndex = Random.Range(0, emptyCells.Count);
+            Cell spawnCell = emptyCells[randomIndex];
+            emptyCells.RemoveAt(randomIndex);
+
+            PersistentSoldier persistentSoldier = campaignManager.currentCampaign.soldiers[i];
+            Unit unit = campaignManager.CreateUnitFromPersistentSoldier(persistentSoldier, unitPrefabs[0]);
+            unit.SetPosition(spawnCell);
+
+            turnManager.playerUnits.Add(unit);
+        }
+    }
+
+    void SpawnEnemyUnits()
+    {
+        List<Cell> emptyCells = gridSystem.GetAllCells().Where(c => !c.IsOccupied && c.TerrainType != TerrainType.Water).ToList();
+
+        for (int i = 0; i < numEnemyUnits; i++)
         {
             if (emptyCells.Count == 0) break;
 
@@ -84,16 +111,8 @@ public class GameManager : MonoBehaviour
 
             unit.SetPosition(spawnCell);
 
-            if (isPlayerTeam)
-            {
-                turnManager.playerUnits.Add(unit);
-                unit.GetComponent<Renderer>().material.color = Color.blue;
-            }
-            else
-            {
-                turnManager.enemyUnits.Add(unit);
-                unit.GetComponent<Renderer>().material.color = Color.red;
-            }
+            turnManager.enemyUnits.Add(unit);
+            unit.GetComponent<Renderer>().material.color = Color.red;
         }
     }
 
@@ -166,6 +185,9 @@ public class GameManager : MonoBehaviour
                     }
                 }
                 break;
+            case GameMode.Inventory:
+                // Handle inventory actions
+                break;
         }
 
         missionManager.CheckMissionObjectives();
@@ -235,5 +257,22 @@ public class GameManager : MonoBehaviour
             progression.ImproveAbility(ability);
             gameUI.UpdateSelectedUnitInfo(selectedUnit);
         }
+    }
+
+    public void EndMission(bool isVictory)
+    {
+        foreach (Unit unit in turnManager.playerUnits)
+        {
+            campaignManager.UpdateSoldierAfterMission(unit);
+        }
+
+        if (isVictory)
+        {
+            campaignManager.currentCampaign.completedMissions++;
+            campaignManager.currentCampaign.resources += 100; // Add resource reward
+        }
+
+        campaignManager.SaveCampaign();
+        // Load the campaign menu or next mission scene
     }
 }
