@@ -124,19 +124,39 @@ public class GridSystem : MonoBehaviour
         return neighbors;
     }
 
-    public void SetCoverType(Vector3 worldPosition, CoverType coverType)
+    public CoverType GetCoverTypeInDirection(Cell cell, Vector3 direction)
     {
-        Cell cell = GetCellAtPosition(worldPosition);
-        if (cell != null)
+        Vector3Int gridDirection = new Vector3Int(
+            Mathf.RoundToInt(direction.x),
+            Mathf.RoundToInt(direction.y),
+            Mathf.RoundToInt(direction.z)
+        );
+
+        Vector3Int neighborPos = cell.GridPosition + gridDirection;
+        if (neighborPos.x >= 0 && neighborPos.x < width &&
+            neighborPos.y >= 0 && neighborPos.y < height &&
+            neighborPos.z >= 0 && neighborPos.z < depth)
         {
-            cell.CoverType = coverType;
+            return grid[neighborPos.x, neighborPos.y, neighborPos.z].CoverType;
         }
+
+        return CoverType.None;
     }
 
-    public CoverType GetCoverType(Vector3 worldPosition)
+    public List<Cell> GetAllCells()
     {
-        Cell cell = GetCellAtPosition(worldPosition);
-        return cell != null ? cell.CoverType : CoverType.None;
+        List<Cell> allCells = new List<Cell>();
+        for (int x = 0; x < width; x++)
+        {
+            for (int y = 0; y < height; y++)
+            {
+                for (int z = 0; z < depth; z++)
+                {
+                    allCells.Add(grid[x, y, z]);
+                }
+            }
+        }
+        return allCells;
     }
 }
 

@@ -7,7 +7,7 @@ public class CombatManager : MonoBehaviour
 
     void Start()
     {
-        gridSystem = GetComponent<GridSystem>();
+        gridSystem = FindObjectOfType<GridSystem>();
     }
 
     public bool TryAttack(Unit attacker, Unit target)
@@ -24,63 +24,81 @@ public class CombatManager : MonoBehaviour
             return false;
         }
 
-        float hitChance = LineOfSight.CalculateHitChance(attacker, target, gridSystem);
+        float hitChance = CalculateHitChance(attacker, target);
+        bool isHit = Random.value <= hitChance;
 
-        if (Random.value <= hitChance)
+        if (isHit)
         {
             int damage = CalculateDamage(attacker, target);
             target.TakeDamage(damage);
             Debug.Log($"{attacker.unitName} hit {target.unitName} for {damage} damage!");
-            attacker.Attack(target);
-            return true;
         }
         else
         {
             Debug.Log($"{attacker.unitName} missed {target.unitName}!");
-            attacker.Attack(target);
-            return false;
+        }
+
+        attacker.Attack(target);
+        return isHit;
+    }
+
+    private float CalculateHitChance(Unit attacker, Unit target)
+    {
+        float baseHitChance = attacker.accuracy / 100f;
+        float weaponAccuracy = attacker.equippedWeapon.GetAccuracy() / 100f;
+        float distance = Vector3.Distance(attacker.transform.position, target.transform.position);
+        float distanceModifier = Mathf.Clamp01(1f - (distance / attacker.attackRange));
+
+        // Apply cover modifier
+        float coverModifier = GetCoverModifier(target);
+
+        // Calculate angle modifier
+        Vector3 toTarget = target.transform.position - attacker.transform.position;
+        float angle = Vector3.Angle(attacker.transform.forward, toTarget);
+        float angleModifier = Mathf.Clamp01(1f - (angle / 90f));
+
+        // Apply modifiers
+        float finalHitChance = (baseHitChance + weaponAccuracy) * distanceModifier * coverModifier * angleModifier;
+
+        return Mathf.Clamp01(finalHitChance);
+    }
+
+    private float GetCoverModifier(Unit target)
+    {
+        CoverType coverType = target.GetCurrentCoverType();
+        switch (coverType)
+        {
+            case CoverType.Half:
+                return 0.7f;
+            case CoverType.Full:
+                return 0.5f;
+            default:
+                return 1f;
         }
     }
 
     private int CalculateDamage(Unit attacker, Unit target)
     {
-        float baseDamage = attacker.damage;
-        float critChance = 0.1f; // 10% base crit chance
+        int baseDamage = attacker.equippedWeapon.GetDamage();
+        float critChance = attacker.equippedWeapon.GetCriticalChance() / 100f;
 
-        // Increase crit chance for Snipers
-        if (attacker.type == UnitType.Sniper)
+        // Apply class-specific bonuses
+        if (attacker.soldierClass.classType == SoldierClassType.Heavy)
         {
-            critChance += 0.1f;
+            baseDamage = Mathf.RoundToInt(baseDamage * 1.2f);
         }
 
-        // Increase damage for Heavy units
-        if (attacker.type == UnitType.Heavy)
-        {
-            baseDamage *= 1.2f;
-        }
-
-        // Apply cover damage reduction
-        Cell targetCell = gridSystem.GetCellAtPosition(target.transform.position);
-        if (targetCell != null)
-        {
-            switch (targetCell.CoverType)
-            {
-                case CoverType.Half:
-                    baseDamage *= 0.75f;
-                    break;
-                case CoverType.Full:
-                    baseDamage *= 0.5f;
-                    break;
-            }
-        }
-
-        // Critical hit
+        // Check for critical hit
         if (Random.value <= critChance)
         {
-            baseDamage *= 1.5f;
+            baseDamage = Mathf.RoundToInt(baseDamage * 1.5f);
             Debug.Log("Critical hit!");
         }
 
-        return Mathf.RoundToInt(baseDamage);
+        // Apply cover damage reduction
+        float coverDamageReduction = 1f - (GetCoverModifier(target) - 0.5f) * 2f;
+        int finalDamage = Mathf.RoundToInt(baseDamage * coverDamageReduction);
+
+        return Mathf.Max(1, finalDamage); // Ensure at least 1 damage is dealt
     }
 }

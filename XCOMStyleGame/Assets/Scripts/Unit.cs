@@ -21,6 +21,10 @@ public class Unit : MonoBehaviour
     public bool hasAttacked = false;
 
     private CharacterProgression characterProgression;
+    private GridSystem gridSystem;
+
+    public GameObject fullCoverVisual;
+    public GameObject halfCoverVisual;
 
     void Start()
     {
@@ -29,6 +33,7 @@ public class Unit : MonoBehaviour
         {
             characterProgression = gameObject.AddComponent<CharacterProgression>();
         }
+        gridSystem = FindObjectOfType<GridSystem>();
         InitializeUnit();
     }
 
@@ -67,7 +72,7 @@ public class Unit : MonoBehaviour
         {
             // Update stats based on equipped weapon
             attackRange = equippedWeapon.range;
-            accuracy += Mathf.RoundToInt(equippedWeapon.accuracyModifier * 100);
+            accuracy += equippedWeapon.GetAccuracy();
         }
     }
 
@@ -81,6 +86,33 @@ public class Unit : MonoBehaviour
         currentCell = cell;
         currentCell.IsOccupied = true;
         transform.position = cell.WorldPosition + Vector3.up * 0.5f;
+        UpdateCoverVisuals();
+    }
+
+    void UpdateCoverVisuals()
+    {
+        CoverType coverType = GetCurrentCoverType();
+        fullCoverVisual.SetActive(coverType == CoverType.Full);
+        halfCoverVisual.SetActive(coverType == CoverType.Half);
+    }
+
+    public CoverType GetCurrentCoverType()
+    {
+        if (currentCell == null) return CoverType.None;
+
+        CoverType bestCover = CoverType.None;
+        Vector3[] directions = new Vector3[] { Vector3.forward, Vector3.back, Vector3.left, Vector3.right };
+
+        foreach (Vector3 direction in directions)
+        {
+            CoverType coverInDirection = gridSystem.GetCoverTypeInDirection(currentCell, direction);
+            if (coverInDirection > bestCover)
+            {
+                bestCover = coverInDirection;
+            }
+        }
+
+        return bestCover;
     }
 
     public bool CanMoveTo(Cell targetCell)
@@ -119,6 +151,11 @@ public class Unit : MonoBehaviour
         {
             Die();
         }
+    }
+
+    public void Heal(int amount)
+    {
+        currentHealth = Mathf.Min(currentHealth + amount, maxHealth);
     }
 
     private void Die()
