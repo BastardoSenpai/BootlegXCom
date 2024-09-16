@@ -73,13 +73,32 @@ public class GridSystem : MonoBehaviour
                     if (randomValue < 0.1f)
                     {
                         grid[x, y, 0].CoverType = CoverType.Full;
+                        SpawnDestructibleObject(new Vector3(x, 0, y), CoverType.Full);
                     }
                     else if (randomValue < 0.25f)
                     {
                         grid[x, y, 0].CoverType = CoverType.Half;
+                        SpawnDestructibleObject(new Vector3(x, 0, y), CoverType.Half);
                     }
                 }
             }
+        }
+    }
+
+    void SpawnDestructibleObject(Vector3 position, CoverType coverType)
+    {
+        GameObject destructiblePrefab = coverType == CoverType.Full ? 
+            Resources.Load<GameObject>("Prefabs/FullCover") : 
+            Resources.Load<GameObject>("Prefabs/HalfCover");
+
+        if (destructiblePrefab != null)
+        {
+            GameObject destructibleObject = Instantiate(destructiblePrefab, position, Quaternion.identity);
+            destructibleObject.AddComponent<DestructibleObject>().Initialize(this, GetCellAtPosition(position));
+        }
+        else
+        {
+            Debug.LogError($"Destructible prefab not found for {coverType} cover");
         }
     }
 
@@ -157,6 +176,40 @@ public class GridSystem : MonoBehaviour
             }
         }
         return allCells;
+    }
+
+    public List<Cell> GetCellsInRange(Vector3 position, int range)
+    {
+        List<Cell> cellsInRange = new List<Cell>();
+        Cell centerCell = GetCellAtPosition(position);
+
+        if (centerCell != null)
+        {
+            for (int x = -range; x <= range; x++)
+            {
+                for (int y = -range; y <= range; y++)
+                {
+                    for (int z = -range; z <= range; z++)
+                    {
+                        Vector3Int gridPos = centerCell.GridPosition + new Vector3Int(x, y, z);
+                        if (gridPos.x >= 0 && gridPos.x < width &&
+                            gridPos.y >= 0 && gridPos.y < height &&
+                            gridPos.z >= 0 && gridPos.z < depth)
+                        {
+                            cellsInRange.Add(grid[gridPos.x, gridPos.y, gridPos.z]);
+                        }
+                    }
+                }
+            }
+        }
+
+        return cellsInRange;
+    }
+
+    public void DestroyObjectAtCell(Cell cell)
+    {
+        cell.CoverType = CoverType.None;
+        // You might want to update visuals or trigger other effects here
     }
 }
 
